@@ -1,0 +1,270 @@
+import storeModel from "../../../DB/models/store.model.js";
+
+
+
+const generateId = () => {
+  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+};
+
+
+
+
+// 1. CREATE STORE
+export const createStore = async (req, res) => {
+  try {
+    const { name, username, description, email, contact, address } = req.body;
+    const logo = req.body.image || ""; // ← تم جلب الصورة من cloudinary هنا
+    const userId = req.user.id;
+
+    // Validation
+    if (!name || !username || !description || !email || !contact || !address) {
+      return res.status(400).json({
+        success: false,
+        error: "Bad Request",
+        message: "All required fields must be provided",
+      });
+    }
+
+    // Check if user already has a store
+    const existingStore = await storeModel.findOne({ userId });
+    if (existingStore) {
+      return res.status(400).json({
+        success: false,
+        error: "Bad Request",
+        message: "User already has a store",
+      });
+    }
+
+    // Check if username is already taken
+    const usernameExists = await storeModel.findOne({ username });
+    if (usernameExists) {
+      return res.status(400).json({
+        success: false,
+        error: "Bad Request",
+        message: "Username is already taken",
+      });
+    }
+
+    // Check if email is already taken
+    const emailExists = await storeModel.findOne({ email });
+    if (emailExists) {
+      return res.status(400).json({
+        success: false,
+        error: "Bad Request",
+        message: "Email is already taken by another store",
+      });
+    }
+
+    // Create store
+    const store = new storeModel({
+      id: generateId(),
+      userId,
+      name,
+      username,
+      description,
+      email,
+      contact,
+      address,
+      logo,
+      status: "pending",
+      isActive: false,
+    });
+
+    await store.save();
+
+    res.status(201).json({
+      success: true,
+      store: {
+        id: store.id,
+        name: store.name,
+        username: store.username,
+        description: store.description,
+        email: store.email,
+        contact: store.contact,
+        address: store.address,
+        logo: store.logo,
+        status: store.status,
+        isActive: store.isActive,
+        createdAt: store.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("Create store error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+      message: "Something went wrong while creating store",
+    });
+  }
+};
+
+
+// 2. GET STORE BY USERNAME
+export const getStoreByUsername = async (req, res) => {
+  try {
+    const { username } = req.params;
+    const { includeInactive = 'false' } = req.query;
+
+    // Enhanced logging for debugging
+    console.log(`[Store Lookup] Username: ${username}, IncludeInactive: ${includeInactive}`);
+    console.log(`[Store Lookup] Request headers:`, req.headers);
+    console.log(`[Store Lookup] Request params:`, req.params);
+
+    // Build query based on includeInactive parameter
+    const query = { username };
+    if (includeInactive !== 'true') {
+      query.isActive = true;
+    }
+
+    console.log(`[Store Lookup] Query:`, query);
+
+    const store = await storeModel.findOne(query);
+
+    if (!store) {
+      console.log(`[Store Lookup] Store not found for username: ${username}`);
+
+      // Check if any store exists with this username regardless of status
+      const anyStore = await storeModel.findOne({ username: username });
+      if (anyStore) {
+        console.log(`[Store Lookup] Store exists but is inactive. Status: ${anyStore.status}, isActive: ${anyStore.isActive}`);
+      }
+
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Store not found',
+        details: {
+          username,
+          searchedWithActiveFilter: includeInactive !== 'true',
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
+    console.log(`[Store Lookup] Store found: ${store.name} (${store.id})`);
+
+    res.json({
+      success: true,
+      store: {
+        id: store.id,
+        name: store.name,
+        username: store.username,
+        description: store.description,
+        email: store.email,
+        contact: store.contact,
+        address: store.address,
+        logo: store.logo,
+        status: store.status,
+        isActive: store.isActive,
+        createdAt: store.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Get store by username error:', error);
+    console.error('Error stack:', error.stack);
+
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Something went wrong while fetching store',
+      details: {
+        username: req.params.username,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+};
+
+
+
+
+// 3. DEBUG: GET STORES BY USER ID
+export const getStoresByUserId = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    console.log(`[Store Debug] Checking stores for userId: ${userId}`);
+
+    const stores = await storeModel.find({ userId });
+
+    if (!stores || stores.length === 0) {
+      console.log(`[Store Debug] No stores found for userId: ${userId}`);
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'No stores found for this user',
+        details: {
+          userId,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+
+
+    res.json({
+      success: true,
+      stores: stores.map(store => ({
+        id: store.id,
+        name: store.name,
+        username: store.username,
+        status: store.status,
+        isActive: store.isActive,
+        createdAt: store.createdAt
+      })),
+      count: stores.length
+    });
+  } catch (error) {
+    console.error('Store debug error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Something went wrong while checking stores',
+      details: {
+        userId: req.params.userId,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      }})}}
+
+
+      // 4. GET ALL STORES
+export const getAllStores = async (req, res) => {
+  try {
+    const { includeInactive = 'false' } = req.query;
+
+    const query = {};
+    if (includeInactive !== 'true') {
+      query.isActive = true;
+    }
+
+    const stores = await storeModel.find(query);
+
+    res.json({
+      success: true,
+      count: stores.length,
+      stores: stores.map(store => ({
+        id: store.id,
+        name: store.name,
+        username: store.username,
+        description: store.description,
+        email: store.email,
+        contact: store.contact,
+        address: store.address,
+        logo: store.logo,
+        status: store.status,
+        isActive: store.isActive,
+        createdAt: store.createdAt,
+      }))
+    });
+  } catch (error) {
+    console.error('Get all stores error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Something went wrong while fetching all stores',
+      details: {
+        error: error.message,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+};
