@@ -24,7 +24,7 @@ export const createStore = async (req, res) => {
         message: "All required fields must be provided",
       });
     }
-
+   
     // Check if user already has a store
     const existingStore = await storeModel.findOne({ userId });
     if (existingStore) {
@@ -175,9 +175,9 @@ export const getStoreByUsername = async (req, res) => {
     });
   }
 };
+ 
 
-
-
+ 
 
 // 3. DEBUG: GET STORES BY USER ID
 export const getStoresByUserId = async (req, res) => {
@@ -261,6 +261,103 @@ export const getAllStores = async (req, res) => {
       success: false,
       error: 'Internal Server Error',
       message: 'Something went wrong while fetching all stores',
+      details: {
+        error: error.message,
+        timestamp: new Date().toISOString()
+      }
+    });
+  }
+};
+
+ 
+
+export const updateStoreStatus = async (req, res) => {
+  try {
+    const { storeId } = req.params;
+    const { action } = req.body; // 'approve' or 'reject'
+
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Action must be either "approve" or "reject"',
+      });
+    }
+
+    const store = await storeModel.findOne({ id: storeId });
+
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Store not found',
+      });
+    }
+
+    if (action === 'approve') {
+      store.status = 'approved';
+      store.isActive = true;
+    } else if (action === 'reject') {
+      store.status = 'rejected';
+      store.isActive = false;
+    }
+
+    await store.save();
+
+    return res.json({
+      success: true,
+      message: `Store has been ${action}d successfully.`,
+      store: {
+        id: store.id,
+        name: store.name,
+        username: store.username,
+        status: store.status,
+        isActive: store.isActive,
+        updatedAt: store.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error('Update store status error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Something went wrong while updating store status',
+      details: {
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+};
+ 
+
+export const getPendingStores = async (req, res) => {
+  try {
+    const pendingStores = await storeModel.find({ status: 'pending' });
+
+    res.json({
+      success: true,
+      count: pendingStores.length,
+      stores: pendingStores.map(store => ({
+        id: store.id,
+        name: store.name,
+        username: store.username,
+        description: store.description,
+        email: store.email,
+        contact: store.contact,
+        address: store.address,
+        logo: store.logo,
+        status: store.status,
+        isActive: store.isActive,
+        createdAt: store.createdAt,
+      }))
+    });
+  } catch (error) {
+    console.error('Get pending stores error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Something went wrong while fetching pending stores',
       details: {
         error: error.message,
         timestamp: new Date().toISOString()
