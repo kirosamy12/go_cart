@@ -491,3 +491,61 @@ export const getUserById = async (req, res) => {
     });
   }
 };
+
+
+
+export const updateUserRole = async (req, res) => {
+  try {
+    const { id } = req.params; // user id (string)
+    const { role } = req.body; // new role
+
+    // تحقق إن الـ role اللي داخل صحيح
+    const allowedRoles = ["user", "admin", "store"];
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        error: "Bad Request",
+        message: `Invalid role. Allowed roles: ${allowedRoles.join(", ")}`,
+      });
+    }
+
+    // تحديث المستخدم بناءً على الـ id (مش _id)
+    const updatedUser = await userModel.findOneAndUpdate(
+      { id },
+      { role },
+      { new: true }
+    ).lean();
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        error: "Not Found",
+        message: "User not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "User role updated successfully",
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        image: updatedUser.image,
+        updatedAt: updatedUser.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Update user role error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+      message: "Something went wrong while updating user role",
+      details: {
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+};
