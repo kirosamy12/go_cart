@@ -333,7 +333,10 @@ export const updateStoreStatus = async (req, res) => {
 
 export const getPendingStores = async (req, res) => {
   try {
-    const pendingStores = await storeModel.find({ status: 'pending' });
+    // جلب المتاجر pending مع بيانات المستخدم
+    const pendingStores = await storeModel.find({ status: 'pending' })
+      .populate('user', 'name email phone role createdAt'); 
+      // غيّر أسماء الحقول حسب الـ user schema عندك
 
     res.json({
       success: true,
@@ -350,6 +353,16 @@ export const getPendingStores = async (req, res) => {
         status: store.status,
         isActive: store.isActive,
         createdAt: store.createdAt,
+
+        // معلومات المستخدم
+        user: store.user ? {
+          id: store.user._id,
+          name: store.user.name,
+          email: store.user.email,
+          phone: store.user.phone,
+          role: store.user.role,
+          createdAt: store.user.createdAt,
+        } : null
       }))
     });
   } catch (error) {

@@ -50,6 +50,9 @@ const storeSchema = new mongoose.Schema({
     required: true,
     lowercase: true,
     trim: true
+  },  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'  // لازم يكون نفس اسم الموديل اللي عامل له export
   },
   contact: {
     type: String,
