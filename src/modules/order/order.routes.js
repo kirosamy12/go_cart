@@ -7,6 +7,10 @@ import {
    getStoreOrders,
 //   cancelOrder,
 //   getOrderStats,
+getMyOrders,
+  trackOrder,
+  getInvoices,
+  getInvoiceById,
    getOrderTracking,
 } from '../order/order.controler.js';
 import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js';
@@ -29,6 +33,16 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
 // // Store orders
  router.get('/store/orders',protectRoutes ,allowTo("store"), getStoreOrders);
  router.put('/:orderId/status', protectRoutes,allowTo('store'), updateOrderStatus);
+
+ router.get("/order/myOrders", protectRoutes, getMyOrders);
+ router.get("/track/:orderId", protectRoutes, trackOrder);
+ 
+ // فواتير المستخدم
+ router.get("/order/invoices", protectRoutes, getInvoices);
+ router.get("/order/invoice/:orderId", protectRoutes, getInvoiceById);
+ 
+
+
 export default router;
        
      

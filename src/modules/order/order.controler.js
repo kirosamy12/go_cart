@@ -634,3 +634,261 @@ export const getOrderTracking = async (req, res) => {
     });
   }
 };
+
+
+
+
+const toStr = v => (v ? v.toString() : v);
+
+// 1) عرض أوردراتي (paginated)
+export const getMyOrders = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, status } = req.query;
+    const skip = (page - 1) * limit;
+    const userId = req.user._id.toString();
+
+    const query = { userId };
+    if (status) query.status = status;
+
+    const [orders, total] = await Promise.all([
+      orderModel.find(query)
+        .sort({ createdAt: -1 })
+        .skip(parseInt(skip, 10))
+        .limit(parseInt(limit, 10)),
+      orderModel.countDocuments(query)
+    ]);
+
+    // لاحظ: بعض الحقول (storeId, addressId) مخزنة كـ id string أو ObjectId
+    // فنجيب بيانات المتجر والعنوان لكل طلب عند الحاجة (دفعة واحدة لتحسين الأداء)
+    const storeIds = [...new Set(orders.map(o => toStr(o.storeId)).filter(Boolean))];
+    const addressIds = [...new Set(orders.map(o => toStr(o.addressId)).filter(Boolean))];
+
+    const [stores, addresses] = await Promise.all([
+      storeModel.find({ _id: { $in: storeIds } }).lean(),        // findById works with string _id
+      addressModel.find({ _id: { $in: addressIds } }).lean()
+    ]);
+
+    const storeMap = {};
+    stores.forEach(s => (storeMap[s._id.toString()] = s));
+    const addressMap = {};
+    addresses.forEach(a => (addressMap[a._id.toString()] = a));
+
+    const result = orders.map(order => ({
+      id: order.id,
+      total: order.total,
+      status: order.status,
+      paymentMethod: order.paymentMethod,
+      isPaid: order.isPaid,
+      isCouponUsed: order.isCouponUsed,
+      coupon: order.coupon,
+      createdAt: order.createdAt,
+      store: storeMap[toStr(order.storeId)] || null,
+      address: addressMap[toStr(order.addressId)] || null,
+      orderItems: order.orderItems.map(item => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        price: item.price
+      }))
+    }));
+
+    res.json({
+      success: true,
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      total,
+      pages: Math.ceil(total / limit),
+      orders: result
+    });
+  } catch (error) {
+    console.error("Get my orders error:", error);
+    res.status(500).json({ success: false, message: "Something went wrong while fetching your orders" });
+  }
+};
+
+
+// 2) تتبع طلب واحد (تفاصيل + صلاحية الوصول)
+export const trackOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ success: false, message: "Order ID is required" });
+
+    const order = await orderModel.findOne({ id: orderId });
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+
+    // تحقق صلاحية الوصول: صاحب الطلب أو صاحب المتجر
+    const currentUserId = req.user._id.toString();
+    const isOrderOwner = toStr(order.userId) === currentUserId;
+
+    // تحقق إذا المستخدم عنده متجر ومالكه هو اللي ينتمي للمتجر
+    const userStore = await storeModel.findOne({ userId: req.user.id }); // user.id (custom) موجود عندك
+    const isStoreOwner = userStore && toStr(userStore._id) === toStr(order.storeId);
+
+    if (!isOrderOwner && !isStoreOwner) {
+      return res.status(403).json({ success: false, message: "You do not have permission to view this order" });
+    }
+
+    // جلب بيانات المتجر والعنوان (إن وجدت)
+    const store = order.storeId ? await storeModel.findById(order.storeId).lean() : null;
+    const address = order.addressId ? await addressModel.findById(order.addressId).lean() : null;
+
+    // جلب تفاصيل المنتجات (بما أن orderItems.productId عادة ObjectId)
+    const productIds = order.orderItems.map(i => i.productId).filter(Boolean);
+    const products = await productModel.find({ _id: { $in: productIds } }).lean();
+    const productMap = {};
+    products.forEach(p => (productMap[p._id.toString()] = p));
+
+    // بناء خطوات التتبع كما في كودك السابق (ممكن تعدل التسميات)
+    const trackingSteps = [
+      { status: "pending", label: "Order Placed", completed: true, timestamp: order.createdAt },
+      { status: "processing", label: "Processing", completed: ["processing", "shipped", "delivered"].includes(order.status), timestamp: (["processing","shipped","delivered"].includes(order.status) ? order.updatedAt : null) },
+      { status: "shipped", label: "Shipped", completed: ["shipped","delivered"].includes(order.status), timestamp: (["shipped","delivered"].includes(order.status) ? order.updatedAt : null) },
+      { status: "delivered", label: "Delivered", completed: order.status === "delivered", timestamp: (order.status === "delivered" ? order.updatedAt : null) }
+    ];
+
+    const cancelledStep = order.status === "cancelled" ? { status: "cancelled", label: "Cancelled", completed: true, timestamp: order.updatedAt } : null;
+    const completedSteps = trackingSteps.filter(s => s.completed).length;
+    const progressPercentage = order.status === "cancelled" ? 0 : Math.round((completedSteps / trackingSteps.length) * 100);
+
+    res.json({
+      success: true,
+      tracking: {
+        orderId: order.id,
+        currentStatus: order.status,
+        progressPercentage,
+        isPaid: order.isPaid,
+        paymentMethod: order.paymentMethod,
+        total: order.total,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        store: store ? { id: store.id, name: store.name, username: store.username, contact: store.contact, logo: store.logo } : null,
+        deliveryAddress: address || null,
+        orderItems: order.orderItems.map(i => ({
+          product: productMap[i.productId.toString()] || { id: i.productId },
+          quantity: i.quantity,
+          price: i.price
+        })),
+        steps: order.status === "cancelled" ? [trackingSteps[0], cancelledStep] : trackingSteps,
+        estimatedDelivery: order.status === "shipped" ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) : null
+      }
+    });
+
+  } catch (error) {
+    console.error("Track order error:", error);
+    res.status(500).json({ success: false, message: "Something went wrong while tracking the order" });
+  }
+};
+
+
+// 3) فواتيري — قائمة الفواتير (orders بصيغة فاتورة مختصرة)
+export const getInvoices = async (req, res) => {
+  try {
+    const userId = req.user._id.toString();
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (page - 1) * limit;
+
+    // جلب الطلبات كفواتير
+    const [orders, total] = await Promise.all([
+      orderModel.find({ userId })
+        .sort({ createdAt: -1 })
+        .skip(parseInt(skip, 10))
+        .limit(parseInt(limit, 10))
+        .lean(),
+      orderModel.countDocuments({ userId })
+    ]);
+
+    const invoices = orders.map(order => {
+      // حساب subtotal من items للتأكد
+      const subtotal = order.orderItems.reduce((s, it) => s + (it.price * it.quantity), 0);
+      const taxRate = 0; // حط هنا نسبة الضريبة لو عندك (مثلاً 0.14)
+      const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
+      const total = order.total; // استخدمت total المخزن
+      return {
+        invoiceNumber: `INV-${order.id}`,
+        orderId: order.id,
+        createdAt: order.createdAt,
+        subtotal,
+        taxRate,
+        taxAmount,
+        total,
+        status: order.status
+      };
+    });
+
+    res.json({
+      success: true,
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      total,
+      invoices
+    });
+  } catch (error) {
+    console.error("Get invoices error:", error);
+    res.status(500).json({ success: false, message: "Something went wrong while fetching invoices" });
+  }
+};
+
+
+// 4) فاتورة مفصلة لطلب واحد (PDF-like JSON)
+export const getInvoiceById = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ success: false, message: "Order ID is required" });
+
+    const order = await orderModel.findOne({ id: orderId }).lean();
+    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+
+    // صلاحية العرض: صاحب الطلب فقط
+    if (toStr(order.userId) !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: "You do not have permission to view this invoice" });
+    }
+
+    // جلب بيانات المتجر/عنوان/منتجات
+    const store = order.storeId ? await storeModel.findById(order.storeId).lean() : null;
+    const address = order.addressId ? await addressModel.findById(order.addressId).lean() : null;
+    const products = await productModel.find({ _id: { $in: order.orderItems.map(i => i.productId) } }).lean();
+    const productMap = {};
+    products.forEach(p => (productMap[p._id.toString()] = p));
+
+    const items = order.orderItems.map(it => ({
+      productId: it.productId,
+      name: (productMap[it.productId.toString()] && productMap[it.productId.toString()].name) || "Product",
+      quantity: it.quantity,
+      unitPrice: it.price,
+      lineTotal: it.price * it.quantity
+    }));
+
+    const subtotal = items.reduce((s, it) => s + it.lineTotal, 0);
+    const taxRate = 0; // عدّل حسب نظام الضريبة
+    const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
+    const total = order.total;
+
+    const invoice = {
+      invoiceNumber: `INV-${order.id}`,
+      orderId: order.id,
+      createdAt: order.createdAt,
+      seller: {
+        name: store ? store.name : "Marketplace",
+        email: store ? store.email : null,
+        address: store ? store.address : null
+      },
+      buyer: {
+        id: order.userId,
+        // لو حابب تجيب بيانات المستخدم الكاملة:
+        // userModel.findOne({ id: order.userId })
+      },
+      billingAddress: address || null,
+      items,
+      subtotal,
+      taxRate,
+      taxAmount,
+      total,
+      status: order.status
+    };
+
+    res.json({ success: true, invoice });
+
+  } catch (error) {
+    console.error("Get invoice by id error:", error);
+    res.status(500).json({ success: false, message: "Something went wrong while fetching invoice" });
+  }
+};
