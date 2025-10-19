@@ -408,3 +408,86 @@ export const getPendingStores = async (req, res) => {
   }
 };
 
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await userModel.find().lean(); // .lean() أسرع لأننا مش بنعدل
+
+    if (!users.length) {
+      return res.json({
+        success: true,
+        count: 0,
+        users: [],
+        message: "No users found",
+      });
+    }
+
+    res.json({
+      success: true,
+      count: users.length,
+      users: users.map(user => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        image: user.image,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      })),
+    });
+  } catch (error) {
+    console.error("Get all users error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+      message: "Something went wrong while fetching users",
+      details: {
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+};
+
+
+
+// 2️⃣ GET SINGLE USER BY ID
+export const getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await userModel.findOne({ id }).lean();
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "Not Found",
+        message: "User not found",
+        details: { id },
+      });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        image: user.image,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Get user by id error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+      message: "Something went wrong while fetching user details",
+      details: {
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  }
+};
