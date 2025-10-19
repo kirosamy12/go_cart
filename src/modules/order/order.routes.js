@@ -34,7 +34,7 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get('/store/orders',protectRoutes ,allowTo("store"), getStoreOrders);
  router.put('/:orderId/status', protectRoutes,allowTo('store'), updateOrderStatus);
 
- router.get("/order/myOrders", protectRoutes, getMyOrders);
+ router.get("/user/order/myOrders", protectRoutes, getMyOrders);
  router.get("/track/:orderId", protectRoutes, trackOrder);
  
  // فواتير المستخدم
