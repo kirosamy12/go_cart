@@ -1,4 +1,5 @@
 import storeModel from "../../../DB/models/store.model.js";
+import userModel from "../../../DB/models/user.model.js";
 
 
 
@@ -333,15 +334,34 @@ export const updateStoreStatus = async (req, res) => {
 
 export const getPendingStores = async (req, res) => {
   try {
-    // جلب المتاجر pending مع بيانات المستخدم
-    const pendingStores = await storeModel.find({ status: 'pending' })
-      .populate('user', 'name email phone role createdAt'); 
-      // غيّر أسماء الحقول حسب الـ user schema عندك
+    // أولاً: نجيب المتاجر اللي حالتها pending
+    const pendingStores = await storeModel.find({ status: "pending" });
 
-    res.json({
-      success: true,
-      count: pendingStores.length,
-      stores: pendingStores.map(store => ({
+    // لو مفيش متاجر
+    if (!pendingStores.length) {
+      return res.json({
+        success: true,
+        count: 0,
+        stores: [],
+        message: "No pending stores found",
+      });
+    }
+
+    // ثانياً: نجيب بيانات المستخدمين لكل متجر حسب userId (اللي انت مخزنه كـ id مش _id)
+    const userIds = pendingStores.map((store) => store.userId); // userId هو id الخاص بالمستخدم مش ObjectId
+    const users = await userModel.find({ id: { $in: userIds } }).lean();
+
+    // نحول المستخدمين إلى object سريع البحث
+    const userMap = {};
+    users.forEach((user) => {
+      userMap[user.id] = user;
+    });
+
+    // ثالثاً: نجهز الرد النهائي
+    const storesWithUsers = pendingStores.map((store) => {
+      const user = userMap[store.userId] || null;
+
+      return {
         id: store.id,
         name: store.name,
         username: store.username,
@@ -354,27 +374,37 @@ export const getPendingStores = async (req, res) => {
         isActive: store.isActive,
         createdAt: store.createdAt,
 
-        // معلومات المستخدم
-        user: store.user ? {
-          id: store.user._id,
-          name: store.user.name,
-          email: store.user.email,
-          phone: store.user.phone,
-          role: store.user.role,
-          createdAt: store.user.createdAt,
-        } : null
-      }))
+        // بيانات المستخدم
+        user: user
+          ? {
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              phone: user.phone,
+              role: user.role,
+              createdAt: user.createdAt,
+            }
+          : null,
+      };
+    });
+
+    // رابعاً: نرجّع النتيجة
+    res.json({
+      success: true,
+      count: storesWithUsers.length,
+      stores: storesWithUsers,
     });
   } catch (error) {
-    console.error('Get pending stores error:', error);
+    console.error("Get pending stores error:", error);
     res.status(500).json({
       success: false,
-      error: 'Internal Server Error',
-      message: 'Something went wrong while fetching pending stores',
+      error: "Internal Server Error",
+      message: "Something went wrong while fetching pending stores",
       details: {
         error: error.message,
-        timestamp: new Date().toISOString()
-      }
+        timestamp: new Date().toISOString(),
+      },
     });
   }
 };
+
