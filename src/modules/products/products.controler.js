@@ -1,12 +1,10 @@
-// controllers/productController.js
-import mongoose from 'mongoose';
-
 import productsModel from '../../../DB/models/products.model.js';
 import storeModel from '../../../DB/models/store.model.js';
 import { nanoid } from 'nanoid';
-import categoryModel from '../../../DB/models/category.model.js'
+import categoryModel from '../../../DB/models/category.model.js';
 
 
+// ✅ CREATE PRODUCT (مع دعم الألوان)
 export const createProduct = async (req, res) => {
   try {
     const {
@@ -15,6 +13,7 @@ export const createProduct = async (req, res) => {
       mrp,
       price,
       images,
+      colors, // ← الألوان اختيارية
       category,
       inStock
     } = req.body;
@@ -42,7 +41,6 @@ export const createProduct = async (req, res) => {
       });
     }
 
-    // البحث عن المتجر باستخدام userId كـ String (بدون تحويل)
     const store = await storeModel.findOne({ userId });
 
     if (!store) {
@@ -59,6 +57,7 @@ export const createProduct = async (req, res) => {
       mrp,
       price,
       images,
+      colors: colors || [], // ← إذا مفيش ألوان يبقى array فاضي
       category,
       inStock: inStock !== undefined ? inStock : true,
       storeId: store._id
@@ -78,13 +77,13 @@ export const createProduct = async (req, res) => {
 };
 
 
-// ✅ GET ALL PRODUCTS
+// ✅ GET ALL PRODUCTS (مع الألوان)
 export const getAllProducts = async (req, res) => {
   try {
     const products = await productsModel.find()
       .populate({
         path: 'storeId',
-        select: 'name email image' // أضفت 'image' لو حابب ترجع صورة المتجر
+        select: 'name email image'
       })
       .populate({
         path: 'category',
@@ -96,7 +95,7 @@ export const getAllProducts = async (req, res) => {
       success: true,
       message: 'Products fetched successfully',
       count: products.length,
-      products: products || []  // تأكد إنه دايمًا مصفوفة حتى لو فاضية
+      products: products || []
     });
   } catch (err) {
     console.error('Get Products Error:', err.message);
@@ -108,11 +107,12 @@ export const getAllProducts = async (req, res) => {
   }
 };
 
+
+// ✅ GET PRODUCTS BY CATEGORY (مع الألوان)
 export const getProductsByCategory = async (req, res) => {
   const { slug } = req.params;
 
   try {
-    // 1. ابحث عن الكاتيجوري عن طريق الـ slug
     const category = await categoryModel.findOne({ slug });
 
     if (!category) {
@@ -122,7 +122,6 @@ export const getProductsByCategory = async (req, res) => {
       });
     }
 
-    // 2. استخدم الـ _id بتاع الكاتيجوري اللي لقيناه
     const products = await productsModel.find({ category: category._id })
       .populate({
         path: 'storeId',
@@ -151,13 +150,13 @@ export const getProductsByCategory = async (req, res) => {
 };
 
 
-// ✅ GET SINGLE PRODUCT
+// ✅ GET SINGLE PRODUCT (مع الألوان)
 export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
 
     const product = await productsModel.findOne({ id })
-      .populate('storeId', 'name email image') // ممكن تضيف image زي ما عملت في الكود السابق
+      .populate('storeId', 'name email image')
       .populate('category', 'name slug');
 
     if (!product) {
@@ -170,12 +169,13 @@ export const getProductById = async (req, res) => {
     res.status(500).json({ success: false, message: 'Internal Server Error' });
   }
 };
-// ✅ GET PRODUCTS BY STORE ID
+
+
+// ✅ GET PRODUCTS BY STORE USERNAME (مع الألوان)
 export const getProductsByStoreUsername = async (req, res) => {
   try {
     const { username } = req.params;
 
-    // 1. دور على المتجر باستخدام الـ username
     const store = await storeModel.findOne({ username });
 
     if (!store) {
@@ -185,7 +185,6 @@ export const getProductsByStoreUsername = async (req, res) => {
       });
     }
 
-    // 2. دور على المنتجات باستخدام store._id
     const products = await productsModel.find({ storeId: store._id })
       .populate('storeId', 'name email image username')
       .populate('category', 'name slug');
@@ -196,6 +195,9 @@ export const getProductsByStoreUsername = async (req, res) => {
     res.status(500).json({ success: false, message: 'Internal Server Error' });
   }
 };
+
+
+// ✅ GET MY STORE PRODUCTS (مع الألوان)
 export const getMyStoreProducts = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
@@ -237,14 +239,11 @@ export const getMyStoreProducts = async (req, res) => {
 };
 
 
-
-// ✅ UPDATE PRODUCT
-
+// ✅ UPDATE PRODUCT (مع دعم تعديل الألوان)
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // هنا بنستخدم الصور اللي رفعت على كلاودنيري والموجودة في req.body.images
     const uploadedImages = req.body.images || [];
 
     const allowedFields = [
@@ -253,6 +252,7 @@ export const updateProduct = async (req, res) => {
       'mrp',
       'price',
       'images',
+      'colors', // ← إضافة الألوان للحقول المسموحة
       'category',
       'inStock',
       'storeId'
@@ -269,6 +269,14 @@ export const updateProduct = async (req, res) => {
     // استبدل الصور القديمة بالصور المرفوعة من كلاودنيري
     if (uploadedImages.length > 0) {
       updates.images = uploadedImages;
+    }
+
+    // لو عايز تحديث الألوان، اتأكد إنها array
+    if (updates.colors && !Array.isArray(updates.colors)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Colors must be an array'
+      });
     }
 
     if (
@@ -320,6 +328,8 @@ export const updateProduct = async (req, res) => {
     });
   }
 };
+
+
 // ✅ DELETE PRODUCT
 export const deleteProduct = async (req, res) => {
   try {
@@ -339,8 +349,7 @@ export const deleteProduct = async (req, res) => {
 };
 
 
-
-// controllers/productController.js
+// ✅ TOGGLE STOCK
 export const toggleStock = async (req, res) => {
   try {
     const { id } = req.params;

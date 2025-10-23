@@ -1,4 +1,3 @@
-// models/Product.js
 import mongoose from 'mongoose';
 
 const productSchema = new mongoose.Schema({
@@ -24,9 +23,13 @@ const productSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+  colors: {
+    type: [String],     // 👈 مصفوفة ألوان مثل ['Red', 'Blue', 'Black']
+    default: []         // 👈 مش إلزامي، فلو المستخدم ما أرسلش ألوان بتبقى فاضية
+  },
   category: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category', // 👈 تأكد إنك عندك موديل اسمه Category
+    ref: 'Category',
     required: true
   },
   inStock: {
@@ -35,7 +38,7 @@ const productSchema = new mongoose.Schema({
   },
   storeId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Store', // 👈 تأكد إنك عندك موديل اسمه Store
+    ref: 'Store',
     required: true
   }
 }, {
