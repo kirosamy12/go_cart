@@ -11,11 +11,10 @@ const generateId = () => {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 };
 
+// ✅ CREATE ORDER (مع دعم الألوان)
 export const createOrder = async (req, res) => {
   try {
     const { addressId, paymentMethod, couponCode } = req.body;
-
-    // ✅ استخدم user._id كـ string (عشان مطابق للداتا)
     const userId = req.user._id.toString();
 
     // 1. التحقق من البيانات الأساسية
@@ -32,6 +31,13 @@ export const createOrder = async (req, res) => {
       userId: req.user._id.toString()
     });
 
+    if (!address) {
+      return res.status(404).json({
+        success: false,
+        message: 'Address not found'
+      });
+    }
+
     // 3. جلب محتوى السلة
     const cart = await cartModel.findOne({ userId });
     if (!cart || !cart.items.length) {
@@ -42,7 +48,7 @@ export const createOrder = async (req, res) => {
     }
 
     // 4. تقسيم السلة حسب storeId
-    const storeGroups = {}; // storeId => [items]
+    const storeGroups = {};
 
     for (const item of cart.items) {
       const product = await productModel.findOne({ id: item.productId, inStock: true });
@@ -60,10 +66,31 @@ export const createOrder = async (req, res) => {
         });
       }
 
+      // ✅ التحقق من اللون إذا كان المنتج يحتوي على ألوان
+      if (item.selectedColor) {
+        if (!product.colors || product.colors.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Product ${product.name} does not have color options`
+          });
+        }
+        
+        if (!product.colors.includes(item.selectedColor)) {
+          return res.status(400).json({
+            success: false,
+            message: `Color ${item.selectedColor} is not available for ${product.name}`
+          });
+        }
+      }
+
       const storeId = product.storeId.toString();
       if (!storeGroups[storeId]) storeGroups[storeId] = [];
 
-      storeGroups[storeId].push({ product, quantity: item.quantity });
+      storeGroups[storeId].push({ 
+        product, 
+        quantity: item.quantity,
+        selectedColor: item.selectedColor || null // ← حفظ اللون المختار
+      });
     }
 
     // 5. إنشاء الطلبات
@@ -74,14 +101,15 @@ export const createOrder = async (req, res) => {
       let total = 0;
       const validatedItems = [];
 
-      for (const { product, quantity } of storeItems) {
+      for (const { product, quantity, selectedColor } of storeItems) {
         const itemTotal = product.price * quantity;
         total += itemTotal;
 
         validatedItems.push({
           productId: product._id,
           quantity,
-          price: product.price
+          price: product.price,
+          selectedColor // ← إضافة اللون المختار
         });
       }
 
@@ -98,7 +126,7 @@ export const createOrder = async (req, res) => {
 
         if (couponDoc) {
           const isNewUser = !(await orderModel.findOne({ userId }));
-          const isMember = true; // أو تحقق من صلاحية العضو فعليًا
+          const isMember = true;
 
           if (
             (couponDoc.forNewUser && isNewUser) ||
@@ -132,11 +160,12 @@ export const createOrder = async (req, res) => {
 
       await order.save();
 
-      // 8. اختياري: populate
+      // 8. populate
       const populatedOrder = await orderModel.findOne({ id: order.id })
         .populate('userId', 'id name email')
         .populate('storeId', 'id name username')
-        .populate('addressId', 'id street city country phone');
+        .populate('addressId', 'id street city country phone')
+        .populate('orderItems.productId', 'id name images colors'); // ← إضافة colors
 
       createdOrders.push({
         id: populatedOrder.id,
@@ -147,7 +176,17 @@ export const createOrder = async (req, res) => {
         isCouponUsed: populatedOrder.isCouponUsed,
         coupon: populatedOrder.coupon,
         createdAt: populatedOrder.createdAt,
-        orderItems: populatedOrder.orderItems,
+        orderItems: populatedOrder.orderItems.map(item => ({
+          product: {
+            id: item.productId.id,
+            name: item.productId.name,
+            images: item.productId.images,
+            colors: item.productId.colors // ← إرجاع الألوان المتاحة
+          },
+          quantity: item.quantity,
+          price: item.price,
+          selectedColor: item.selectedColor // ← اللون المختار
+        })),
         user: populatedOrder.userId,
         store: populatedOrder.storeId,
         address: populatedOrder.addressId
@@ -175,26 +214,21 @@ export const createOrder = async (req, res) => {
 };
 
 
+// ✅ GET USER ORDERS (مع الألوان)
 export const getUserOrders = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
-
-    // 🟢 تأكيد هوية المستخدم
     const userId = req.user._id.toString();
     const skip = (page - 1) * limit;
 
-    // 🟢 بناء الاستعلام
     const query = { userId };
     if (status) query.status = status;
 
-    console.log("Query object:", query);
-
-    // 🟢 استعلام الطلبات وعددها مع populate كامل
     const [orders, total] = await Promise.all([
       orderModel.find(query)
-        .populate('storeId', 'id name username logo') // بيانات المتجر
-        .populate('addressId', 'street city state country phone') // بيانات العنوان
-        .populate('orderItems.productId', 'id name images') // بيانات المنتج
+        .populate('storeId', 'id name username logo')
+        .populate('addressId', 'street city state country phone')
+        .populate('orderItems.productId', 'id name images colors') // ← إضافة colors
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit, 10)),
@@ -202,10 +236,6 @@ export const getUserOrders = async (req, res) => {
       orderModel.countDocuments(query)
     ]);
 
-    console.log("Orders found:", orders.length);
-    console.log("Total count:", total);
-
-    // 🟢 تجهيز الرد النهائي
     res.json({
       success: true,
       orders: orders.map(order => ({
@@ -218,13 +248,19 @@ export const getUserOrders = async (req, res) => {
         coupon: order.coupon,
         createdAt: order.createdAt,
 
-        store: order.storeId, // يحتوي على id, name, username, logo
-        address: order.addressId, // يحتوي على بيانات العنوان
+        store: order.storeId,
+        address: order.addressId,
 
         orderItems: order.orderItems.map(item => ({
-          product: item.productId, // يحتوي على id, name, images
+          product: {
+            id: item.productId.id,
+            name: item.productId.name,
+            images: item.productId.images,
+            colors: item.productId.colors // ← الألوان المتاحة
+          },
           quantity: item.quantity,
-          price: item.price
+          price: item.price,
+          selectedColor: item.selectedColor // ← اللون المختار
         }))
       })),
 
@@ -246,8 +282,7 @@ export const getUserOrders = async (req, res) => {
 };
 
 
-
-
+// ✅ GET ORDER BY ID (مع الألوان)
 export const getOrderById = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -259,11 +294,10 @@ export const getOrderById = async (req, res) => {
       });
     }
 
-    // ⛔️ لو بتستخدم id المخصص بتاعك (مش _id)
     const order = await orderModel.findOne({ id: orderId })
       .populate('storeId', 'id name username logo')
       .populate('addressId', 'street city state country phone')
-      .populate('orderItems.productId', 'id name images');
+      .populate('orderItems.productId', 'id name images colors'); // ← إضافة colors
 
     if (!order) {
       return res.status(404).json({
@@ -288,9 +322,15 @@ export const getOrderById = async (req, res) => {
         address: order.addressId,
 
         orderItems: order.orderItems.map(item => ({
-          product: item.productId,
+          product: {
+            id: item.productId.id,
+            name: item.productId.name,
+            images: item.productId.images,
+            colors: item.productId.colors // ← الألوان المتاحة
+          },
           quantity: item.quantity,
-          price: item.price
+          price: item.price,
+          selectedColor: item.selectedColor // ← اللون المختار
         }))
       }
     });
@@ -305,15 +345,11 @@ export const getOrderById = async (req, res) => {
 };
 
 
-
-
-
+// ✅ GET STORE ORDERS (مع الألوان)
 export const getStoreOrders = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
-
-    // 🟢 البحث عن المتجر باستخدام الـ custom id
-    const userId = req.user.id; // الـ id المخصص (String)
+    const userId = req.user.id;
     
     const store = await storeModel.findOne({ userId });
     
@@ -324,23 +360,17 @@ export const getStoreOrders = async (req, res) => {
       });
     }
 
-    // استخدام الـ MongoDB _id للبحث في الطلبات
     const storeId = store._id.toString();
-
     const skip = (page - 1) * limit;
 
-    // 🟢 بناء الاستعلام
     const query = { storeId: storeId.toString() };
     if (status) query.status = status;
 
-    console.log("Store Query:", query);
-
-    // 🟢 جلب الطلبات مع populate كامل
     const [orders, total] = await Promise.all([
       orderModel.find(query)
-        .populate('userId', 'id name email phone') // بيانات العميل
-        .populate('addressId', 'street city state country phone') // عنوان التوصيل
-        .populate('orderItems.productId', 'id name images price') // بيانات المنتجات
+        .populate('userId', 'id name email phone')
+        .populate('addressId', 'street city state country phone')
+        .populate('orderItems.productId', 'id name images price colors') // ← إضافة colors
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit, 10)),
@@ -348,9 +378,6 @@ export const getStoreOrders = async (req, res) => {
       orderModel.countDocuments(query)
     ]);
 
-    console.log("Store Orders found:", orders.length);
-
-    // 🟢 تجهيز الرد
     res.json({
       success: true,
       orders: orders.map(order => ({
@@ -363,13 +390,20 @@ export const getStoreOrders = async (req, res) => {
         coupon: order.coupon,
         createdAt: order.createdAt,
 
-        customer: order.userId, // بيانات العميل
-        address: order.addressId, // عنوان التوصيل
+        customer: order.userId,
+        address: order.addressId,
 
         orderItems: order.orderItems.map(item => ({
-          product: item.productId,
+          product: {
+            id: item.productId.id,
+            name: item.productId.name,
+            images: item.productId.images,
+            price: item.productId.price,
+            colors: item.productId.colors // ← الألوان المتاحة
+          },
           quantity: item.quantity,
-          price: item.price
+          price: item.price,
+          selectedColor: item.selectedColor // ← اللون المختار
         }))
       })),
 
@@ -380,7 +414,6 @@ export const getStoreOrders = async (req, res) => {
         pages: Math.ceil(total / limit)
       },
 
-      // 🟢 إحصائيات إضافية
       stats: {
         totalOrders: total,
         pendingOrders: orders.filter(o => o.status === 'pending').length,
@@ -398,13 +431,13 @@ export const getStoreOrders = async (req, res) => {
   }
 };
 
-// 🟢 دالة إضافية: تحديث حالة الطلب (للمتجر فقط)
+
+// ✅ UPDATE ORDER STATUS
 export const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
 
-    // ✅ التحقق من وجود الحالة
     if (!status) {
       return res.status(400).json({
         success: false,
@@ -412,7 +445,6 @@ export const updateOrderStatus = async (req, res) => {
       });
     } 
 
-    // ✅ الحالات المسموح بها
     const validStatuses = ["ORDER_PLACED", "PROCESSING", "SHIPPED", "DELIVERED"];
     
     if (!validStatuses.includes(status)) {
@@ -422,7 +454,6 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // ✅ البحث عن المتجر
     const userId = req.user.id;
     const store = await storeModel.findOne({ userId });
     
@@ -435,7 +466,6 @@ export const updateOrderStatus = async (req, res) => {
 
     const storeId = store._id.toString();
 
-    // ✅ البحث عن الطلب والتأكد من ملكيته للمتجر
     const order = await orderModel.findOne({ 
       id: orderId,
       storeId: storeId
@@ -448,7 +478,6 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // ✅ منع تغيير حالة الطلبات الملغاة أو المكتملة
     if (order.status === 'cancelled') {
       return res.status(400).json({
         success: false,
@@ -463,21 +492,18 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // ✅ تحديث الحالة
     order.status = status;
     
-    // إذا تم التوصيل، قم بتحديث isPaid للدفع عند الاستلام
     if (status === 'delivered' && order.paymentMethod === 'cash') {
       order.isPaid = true;
     }
 
     await order.save();
 
-    // ✅ جلب الطلب المحدث مع populate
     const updatedOrder = await orderModel.findOne({ id: orderId })
       .populate('userId', 'id name email phone')
       .populate('addressId', 'street city state country phone')
-      .populate('orderItems.productId', 'id name images price');
+      .populate('orderItems.productId', 'id name images price colors'); // ← إضافة colors
 
     res.json({
       success: true,
@@ -492,9 +518,16 @@ export const updateOrderStatus = async (req, res) => {
         customer: updatedOrder.userId,
         address: updatedOrder.addressId,
         orderItems: updatedOrder.orderItems.map(item => ({
-          product: item.productId,
+          product: {
+            id: item.productId.id,
+            name: item.productId.name,
+            images: item.productId.images,
+            price: item.productId.price,
+            colors: item.productId.colors // ← الألوان المتاحة
+          },
           quantity: item.quantity,
-          price: item.price
+          price: item.price,
+          selectedColor: item.selectedColor // ← اللون المختار
         }))
       }
     });
@@ -509,7 +542,7 @@ export const updateOrderStatus = async (req, res) => {
 };
 
 
-
+// ✅ GET ORDER TRACKING (مع الألوان)
 export const getOrderTracking = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -521,10 +554,10 @@ export const getOrderTracking = async (req, res) => {
       });
     }
 
-    // ✅ جلب الطلب
     const order = await orderModel.findOne({ id: orderId })
       .populate('storeId', 'id name username logo contact')
-      .populate('addressId', 'street city state country phone');
+      .populate('addressId', 'street city state country phone')
+      .populate('orderItems.productId', 'id name images colors'); // ← إضافة colors
 
     if (!order) {
       return res.status(404).json({
@@ -533,7 +566,6 @@ export const getOrderTracking = async (req, res) => {
       });
     }
 
-    // ✅ التأكد من صلاحية الوصول (المستخدم أو صاحب المتجر)
     const userId = req.user.id;
     const userStore = await storeModel.findOne({ userId });
     
@@ -547,7 +579,6 @@ export const getOrderTracking = async (req, res) => {
       });
     }
 
-    // ✅ تحديد مراحل التتبع بناءً على الحالة
     const trackingSteps = [
       {
         status: 'pending',
@@ -579,7 +610,6 @@ export const getOrderTracking = async (req, res) => {
       }
     ];
 
-    // ✅ حالة الإلغاء
     let cancelledStep = null;
     if (order.status === 'cancelled') {
       cancelledStep = {
@@ -591,12 +621,10 @@ export const getOrderTracking = async (req, res) => {
       };
     }
 
-    // ✅ حساب نسبة التقدم
     const completedSteps = trackingSteps.filter(step => step.completed).length;
     const totalSteps = trackingSteps.length;
     const progressPercentage = order.status === 'cancelled' ? 0 : Math.round((completedSteps / totalSteps) * 100);
 
-    // ✅ الرد النهائي
     res.json({
       success: true,
       tracking: {
@@ -618,10 +646,22 @@ export const getOrderTracking = async (req, res) => {
 
         deliveryAddress: order.addressId,
 
+        orderItems: order.orderItems.map(item => ({
+          product: {
+            id: item.productId.id,
+            name: item.productId.name,
+            images: item.productId.images,
+            colors: item.productId.colors // ← الألوان المتاحة
+          },
+          quantity: item.quantity,
+          price: item.price,
+          selectedColor: item.selectedColor // ← اللون المختار
+        })),
+
         steps: order.status === 'cancelled' ? [trackingSteps[0], cancelledStep] : trackingSteps,
         
         estimatedDelivery: order.status === 'shipped' 
-          ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) // 3 أيام من الآن
+          ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
           : null
       }
     });
@@ -636,11 +676,9 @@ export const getOrderTracking = async (req, res) => {
 };
 
 
-
-
 const toStr = v => (v ? v.toString() : v);
 
-// 1) عرض أوردراتي (paginated)
+// ✅ GET MY ORDERS (مع الألوان)
 export const getMyOrders = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
@@ -658,20 +696,22 @@ export const getMyOrders = async (req, res) => {
       orderModel.countDocuments(query)
     ]);
 
-    // لاحظ: بعض الحقول (storeId, addressId) مخزنة كـ id string أو ObjectId
-    // فنجيب بيانات المتجر والعنوان لكل طلب عند الحاجة (دفعة واحدة لتحسين الأداء)
     const storeIds = [...new Set(orders.map(o => toStr(o.storeId)).filter(Boolean))];
     const addressIds = [...new Set(orders.map(o => toStr(o.addressId)).filter(Boolean))];
+    const productIds = [...new Set(orders.flatMap(o => o.orderItems.map(i => toStr(i.productId))).filter(Boolean))];
 
-    const [stores, addresses] = await Promise.all([
-      storeModel.find({ _id: { $in: storeIds } }).lean(),        // findById works with string _id
-      addressModel.find({ _id: { $in: addressIds } }).lean()
+    const [stores, addresses, products] = await Promise.all([
+      storeModel.find({ _id: { $in: storeIds } }).lean(),
+      addressModel.find({ _id: { $in: addressIds } }).lean(),
+      productModel.find({ _id: { $in: productIds } }).lean() // ← جلب المنتجات مع colors
     ]);
 
     const storeMap = {};
     stores.forEach(s => (storeMap[s._id.toString()] = s));
     const addressMap = {};
     addresses.forEach(a => (addressMap[a._id.toString()] = a));
+    const productMap = {};
+    products.forEach(p => (productMap[p._id.toString()] = p));
 
     const result = orders.map(order => ({
       id: order.id,
@@ -684,11 +724,20 @@ export const getMyOrders = async (req, res) => {
       createdAt: order.createdAt,
       store: storeMap[toStr(order.storeId)] || null,
       address: addressMap[toStr(order.addressId)] || null,
-      orderItems: order.orderItems.map(item => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        price: item.price
-      }))
+      orderItems: order.orderItems.map(item => {
+        const product = productMap[toStr(item.productId)];
+        return {
+          product: product ? {
+            id: product.id,
+            name: product.name,
+            images: product.images,
+            colors: product.colors // ← الألوان المتاحة
+          } : null,
+          quantity: item.quantity,
+          price: item.price,
+          selectedColor: item.selectedColor // ← اللون المختار
+        };
+      })
     }));
 
     res.json({
@@ -706,7 +755,7 @@ export const getMyOrders = async (req, res) => {
 };
 
 
-// 2) تتبع طلب واحد (تفاصيل + صلاحية الوصول)
+// ✅ TRACK ORDER (مع الألوان)
 export const trackOrder = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -715,29 +764,24 @@ export const trackOrder = async (req, res) => {
     const order = await orderModel.findOne({ id: orderId });
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-    // تحقق صلاحية الوصول: صاحب الطلب أو صاحب المتجر
     const currentUserId = req.user._id.toString();
     const isOrderOwner = toStr(order.userId) === currentUserId;
 
-    // تحقق إذا المستخدم عنده متجر ومالكه هو اللي ينتمي للمتجر
-    const userStore = await storeModel.findOne({ userId: req.user.id }); // user.id (custom) موجود عندك
+    const userStore = await storeModel.findOne({ userId: req.user.id });
     const isStoreOwner = userStore && toStr(userStore._id) === toStr(order.storeId);
 
     if (!isOrderOwner && !isStoreOwner) {
       return res.status(403).json({ success: false, message: "You do not have permission to view this order" });
     }
 
-    // جلب بيانات المتجر والعنوان (إن وجدت)
     const store = order.storeId ? await storeModel.findById(order.storeId).lean() : null;
     const address = order.addressId ? await addressModel.findById(order.addressId).lean() : null;
 
-    // جلب تفاصيل المنتجات (بما أن orderItems.productId عادة ObjectId)
     const productIds = order.orderItems.map(i => i.productId).filter(Boolean);
     const products = await productModel.find({ _id: { $in: productIds } }).lean();
     const productMap = {};
     products.forEach(p => (productMap[p._id.toString()] = p));
 
-    // بناء خطوات التتبع كما في كودك السابق (ممكن تعدل التسميات)
     const trackingSteps = [
       { status: "pending", label: "Order Placed", completed: true, timestamp: order.createdAt },
       { status: "processing", label: "Processing", completed: ["processing", "shipped", "delivered"].includes(order.status), timestamp: (["processing","shipped","delivered"].includes(order.status) ? order.updatedAt : null) },
@@ -762,11 +806,20 @@ export const trackOrder = async (req, res) => {
         updatedAt: order.updatedAt,
         store: store ? { id: store.id, name: store.name, username: store.username, contact: store.contact, logo: store.logo } : null,
         deliveryAddress: address || null,
-        orderItems: order.orderItems.map(i => ({
-          product: productMap[i.productId.toString()] || { id: i.productId },
-          quantity: i.quantity,
-          price: i.price
-        })),
+        orderItems: order.orderItems.map(i => {
+          const product = productMap[i.productId.toString()];
+          return {
+            product: product ? {
+              id: product.id,
+              name: product.name,
+              images: product.images,
+              colors: product.colors // ← الألوان المتاحة
+            } : { id: i.productId },
+            quantity: i.quantity,
+            price: i.price,
+            selectedColor: i.selectedColor // ← اللون المختار
+          };
+        }),
         steps: order.status === "cancelled" ? [trackingSteps[0], cancelledStep] : trackingSteps,
         estimatedDelivery: order.status === "shipped" ? new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) : null
       }
@@ -779,14 +832,13 @@ export const trackOrder = async (req, res) => {
 };
 
 
-// 3) فواتيري — قائمة الفواتير (orders بصيغة فاتورة مختصرة)
+// ✅ GET INVOICES
 export const getInvoices = async (req, res) => {
   try {
     const userId = req.user._id.toString();
     const { page = 1, limit = 20 } = req.query;
     const skip = (page - 1) * limit;
 
-    // جلب الطلبات كفواتير
     const [orders, total] = await Promise.all([
       orderModel.find({ userId })
         .sort({ createdAt: -1 })
@@ -797,11 +849,10 @@ export const getInvoices = async (req, res) => {
     ]);
 
     const invoices = orders.map(order => {
-      // حساب subtotal من items للتأكد
       const subtotal = order.orderItems.reduce((s, it) => s + (it.price * it.quantity), 0);
-      const taxRate = 0; // حط هنا نسبة الضريبة لو عندك (مثلاً 0.14)
+      const taxRate = 0;
       const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
-      const total = order.total; // استخدمت total المخزن
+      const total = order.total;
       return {
         invoiceNumber: `INV-${order.id}`,
         orderId: order.id,
@@ -828,7 +879,7 @@ export const getInvoices = async (req, res) => {
 };
 
 
-// 4) فاتورة مفصلة لطلب واحد (PDF-like JSON)
+// ✅ GET INVOICE BY ID (مع الألوان)
 export const getInvoiceById = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -837,28 +888,31 @@ export const getInvoiceById = async (req, res) => {
     const order = await orderModel.findOne({ id: orderId }).lean();
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-    // صلاحية العرض: صاحب الطلب فقط
     if (toStr(order.userId) !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: "You do not have permission to view this invoice" });
     }
 
-    // جلب بيانات المتجر/عنوان/منتجات
     const store = order.storeId ? await storeModel.findById(order.storeId).lean() : null;
     const address = order.addressId ? await addressModel.findById(order.addressId).lean() : null;
     const products = await productModel.find({ _id: { $in: order.orderItems.map(i => i.productId) } }).lean();
     const productMap = {};
     products.forEach(p => (productMap[p._id.toString()] = p));
 
-    const items = order.orderItems.map(it => ({
-      productId: it.productId,
-      name: (productMap[it.productId.toString()] && productMap[it.productId.toString()].name) || "Product",
-      quantity: it.quantity,
-      unitPrice: it.price,
-      lineTotal: it.price * it.quantity
-    }));
+    const items = order.orderItems.map(it => {
+      const product = productMap[it.productId.toString()];
+      return {
+        productId: it.productId,
+        name: (product && product.name) || "Product",
+        selectedColor: it.selectedColor || null, // ← اللون المختار
+        availableColors: (product && product.colors) || [], // ← الألوان المتاحة
+        quantity: it.quantity,
+        unitPrice: it.price,
+        lineTotal: it.price * it.quantity
+      };
+    });
 
     const subtotal = items.reduce((s, it) => s + it.lineTotal, 0);
-    const taxRate = 0; // عدّل حسب نظام الضريبة
+    const taxRate = 0;
     const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
     const total = order.total;
 
@@ -872,9 +926,7 @@ export const getInvoiceById = async (req, res) => {
         address: store ? store.address : null
       },
       buyer: {
-        id: order.userId,
-        // لو حابب تجيب بيانات المستخدم الكاملة:
-        // userModel.findOne({ id: order.userId })
+        id: order.userId
       },
       billingAddress: address || null,
       items,
