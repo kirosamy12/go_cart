@@ -13,7 +13,7 @@ import { uploadSingle } from '../../utils/fileUploud.js';
 const router = express.Router();
 
 // POST /api/categories
-router.post('/createCategory',protectRoutes,allowTo('store'),uploadSingle('image'), createCategory);
+router.post('/createCategory',protectRoutes,allowTo('admin'),uploadSingle('image'), createCategory);
 
 // GET /api/categories
 router.get('/getAllCategories', getAllCategories);
