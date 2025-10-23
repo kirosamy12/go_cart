@@ -5,6 +5,8 @@ import {
    getOrderById,
   updateOrderStatus,
    getStoreOrders,
+   getAdminDashboard,
+   getStoreDashboard,
 //   cancelOrder,
 //   getOrderStats,
 getMyOrders,
@@ -41,7 +43,8 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get("/order/invoices", protectRoutes, getInvoices);
  router.get("/order/invoice/:orderId", protectRoutes, getInvoiceById);
  
-
+ router.get("/dashbord/admin", protectRoutes, allowTo("admin"), getAdminDashboard);
+ router.get("/dashbord/store", protectRoutes, allowTo("stote"), getStoreDashboard);
 
 export default router;
        

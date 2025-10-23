@@ -4,6 +4,7 @@ import productModel from"../../../DB/models/products.model.js"
 import orderModel from "../../../DB/models/orderModel.js";
 import cartModel from "../../../DB/models/cart.model.js";
 import mongoose from "mongoose";
+import userModel from "../../../DB/models/user.model.js";
 const ObjectId = mongoose.Types.ObjectId;
 
 
@@ -942,5 +943,158 @@ export const getInvoiceById = async (req, res) => {
   } catch (error) {
     console.error("Get invoice by id error:", error);
     res.status(500).json({ success: false, message: "Something went wrong while fetching invoice" });
+  }
+};
+
+
+
+
+
+
+const calculateTotalRevenue = async (matchFilter = {}) => {
+  const result = await orderModel.aggregate([
+    { $match: { status: "DELIVERED", ...matchFilter } },
+    { $group: { _id: null, totalRevenue: { $sum: "$total" } } },
+  ]);
+  return result[0]?.totalRevenue || 0;
+};
+
+// ===================================================
+// 🧭 STORE DASHBOARD
+// ===================================================
+export const getStoreDashboard = async (req, res) => {
+  try {
+    const storeId = req.user?.storeId || req.query.storeId;
+    if (!storeId) {
+      return res.status(400).json({ message: "Store ID is required" });
+    }
+
+    const storeObjectId = new mongoose.Types.ObjectId(storeId);
+
+    // 🧮 عدد الطلبات
+    const totalOrders = await orderModel.countDocuments({ storeId: storeObjectId });
+
+    // 💰 الأرباح الكلية
+    const totalRevenue = await calculateTotalRevenue({ storeId: storeObjectId });
+
+    // 📦 عدد المنتجات
+    const totalProducts = await productModel.countDocuments({ storeId: storeObjectId });
+
+    // 🏆 أكثر منتج مبيعًا
+    const topProduct = await orderModel.aggregate([
+      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $unwind: "$orderItems" },
+      { $group: { _id: "$orderItems.productId", totalSold: { $sum: "$orderItems.quantity" } } },
+      { $sort: { totalSold: -1 } },
+      { $limit: 1 },
+      {
+        $lookup: {
+          from: "products",
+          localField: "_id",
+          foreignField: "_id",
+          as: "product",
+        },
+      },
+      { $unwind: "$product" },
+      { $project: { productName: "$product.name", totalSold: 1 } },
+    ]);
+
+    // 📊 مبيعات شهرية
+    const monthlySales = await orderModel.aggregate([
+      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      {
+        $group: {
+          _id: { $month: "$createdAt" },
+          total: { $sum: "$total" },
+        },
+      },
+      { $sort: { "_id": 1 } },
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totalOrders,
+        totalRevenue,
+        totalProducts,
+        topProduct: topProduct[0] || null,
+        monthlySales,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Error fetching store dashboard", error: err.message });
+  }
+};
+
+// ===================================================
+// 🧭 ADMIN DASHBOARD
+// ===================================================
+export const getAdminDashboard = async (req, res) => {
+  try {
+    // 🏬 عدد المتاجر
+    const totalStores = await storeModel.countDocuments();
+
+    // 👥 عدد المستخدمين
+    const totalUsers = await userModel.countDocuments({ role: "user" });
+
+    // 💸 الأرباح العامة (من جميع الطلبات الـDelivered)
+    const totalRevenue = await calculateTotalRevenue();
+
+    // 🧾 عدد الطلبات الكلية
+    const totalOrders = await orderModel.countDocuments();
+
+    // 💰 مقارنة أرباح المتاجر
+    const storeRevenues = await orderModel.aggregate([
+      { $match: { status: "DELIVERED" } },
+      { $group: { _id: "$storeId", revenue: { $sum: "$total" } } },
+      {
+        $lookup: {
+          from: "stores",
+          localField: "_id",
+          foreignField: "_id",
+          as: "store",
+        },
+      },
+      { $unwind: "$store" },
+      {
+        $project: {
+          storeName: "$store.name",
+          revenue: 1,
+        },
+      },
+      { $sort: { revenue: -1 } },
+    ]);
+
+    // 🏆 أعلى متجر مبيعًا
+    const topStore = storeRevenues[0] || null;
+
+    // 📈 معدل النمو الشهري في المبيعات
+    const monthlyRevenue = await orderModel.aggregate([
+      { $match: { status: "DELIVERED" } },
+      {
+        $group: {
+          _id: { $month: "$createdAt" },
+          total: { $sum: "$total" },
+        },
+      },
+      { $sort: { "_id": 1 } },
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totalStores,
+        totalUsers,
+        totalOrders,
+        totalRevenue,
+        storeRevenues,
+        topStore,
+        monthlyRevenue,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Error fetching admin dashboard", error: err.message });
   }
 };
