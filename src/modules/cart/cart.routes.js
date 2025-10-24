@@ -16,7 +16,7 @@ router.get('/myCart/my',protectRoutes, getCart);                     // Get cart
 router.post('/createCart',protectRoutes, createCart);                        // Create new cart
 router.patch('/updateCart', protectRoutes,updateCart);                  // Replace items
 router.patch('/addToCart',protectRoutes, addToCart);             // Add or update one item
-router.delete('/removeFromCart/:productId', removeItemFromCart); // Remove one item
+router.patch('/removeFromCart/:productId', removeItemFromCart); // Remove one item
 router.delete('/:userId', deleteCart); 
 
 
