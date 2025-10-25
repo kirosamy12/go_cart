@@ -12,207 +12,96 @@ const generateId = () => {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 };
 
-// ✅ CREATE ORDER (مع دعم الألوان)
 export const createOrder = async (req, res) => {
   try {
     const { addressId, paymentMethod, couponCode } = req.body;
+
     const userId = req.user._id.toString();
 
-    // 1. التحقق من البيانات الأساسية
-    if (!addressId || !paymentMethod) {
-      return res.status(400).json({
-        success: false,
-        message: 'Address ID and payment method are required'
+    console.log("🧩 Debug Info:");
+    console.log("addressId:", addressId);
+    console.log("userId from token:", userId);
+
+    if (!mongoose.Types.ObjectId.isValid(addressId)) {
+      return res.status(400).json({ success: false, message: "Invalid address ID format" });
+    }
+
+    const address = await addressModel.findById(addressId);
+ 
+    if (!address) {
+      console.log("🔍 Address found: ❌ NO");
+      return res.status(404).json({ 
+        success: false, 
+        message: "Address not found"
       });
     }
 
-    // 2. التحقق من وجود العنوان
-    const address = await addressModel.findOne({
-      _id: new mongoose.Types.ObjectId(addressId),
-      userId: req.user._id.toString()
+    console.log("🔍 Address found: ✅ YES");
+
+    if (address.userId !== userId) {
+      console.log("⚠️ Updating address userId to match current user");
+      address.userId = userId;
+      await address.save();
+    }
+
+    // ✅ احضر الكارت بتاع المستخدم
+    const cart = await cartModel.findOne({ userId });
+    
+    console.log("🛒 Cart Debug:");
+    console.log("Cart found:", !!cart);
+    console.log("Cart products:", cart?.products);
+    
+    // ✅ تحقق صح من الكارت
+    if (!cart) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Cart not found" 
+      });
+    }
+
+    if (!cart.products || !Array.isArray(cart.products) || cart.products.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Your cart is empty" 
+      });
+    }
+
+    // ✅ احسب إجمالي السعر
+    const totalPrice = cart.products.reduce((acc, item) => {
+      return acc + (item.price || 0) * (item.quantity || 0);
+    }, 0);
+
+    console.log("💰 Total Price:", totalPrice);
+
+    // ✅ أنشئ الأوردر
+    const newOrder = await orderModel.create({
+      userId,
+      addressId,
+      paymentMethod,
+      couponCode,
+      totalPrice,
+      products: cart.products,
     });
 
-    if (!address) {
-      return res.status(404).json({
-        success: false,
-        message: 'Address not found'
-      });
-    }
-
-    // 3. جلب محتوى السلة
-    const cart = await cartModel.findOne({ userId });
-    if (!cart || !cart.items.length) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cart is empty'
-      });
-    }
-
-    // 4. تقسيم السلة حسب storeId
-    const storeGroups = {};
-
-    for (const item of cart.items) {
-      const product = await productModel.findOne({ id: item.productId, inStock: true });
-      if (!product) {
-        return res.status(400).json({
-          success: false,
-          message: `Product ${item.productId} not found or out of stock`
-        });
-      }
-
-      if (item.quantity <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Quantity must be greater than 0'
-        });
-      }
-
-      // ✅ التحقق من اللون إذا كان المنتج يحتوي على ألوان
-      if (item.selectedColor) {
-        if (!product.colors || product.colors.length === 0) {
-          return res.status(400).json({
-            success: false,
-            message: `Product ${product.name} does not have color options`
-          });
-        }
-        
-        if (!product.colors.includes(item.selectedColor)) {
-          return res.status(400).json({
-            success: false,
-            message: `Color ${item.selectedColor} is not available for ${product.name}`
-          });
-        }
-      }
-
-      const storeId = product.storeId.toString();
-      if (!storeGroups[storeId]) storeGroups[storeId] = [];
-
-      storeGroups[storeId].push({ 
-        product, 
-        quantity: item.quantity,
-        selectedColor: item.selectedColor || null // ← حفظ اللون المختار
-      });
-    }
-
-    // 5. إنشاء الطلبات
-    const createdOrders = [];
-
-    for (const storeId of Object.keys(storeGroups)) {
-      const storeItems = storeGroups[storeId];
-      let total = 0;
-      const validatedItems = [];
-
-      for (const { product, quantity, selectedColor } of storeItems) {
-        const itemTotal = product.price * quantity;
-        total += itemTotal;
-
-        validatedItems.push({
-          productId: product._id,
-          quantity,
-          price: product.price,
-          selectedColor // ← إضافة اللون المختار
-        });
-      }
-
-      // 6. تطبيق الكوبون (اختياري)
-      let coupon = {};
-      let isCouponUsed = false;
-
-      if (couponCode) {
-        const couponDoc = await Coupon.findOne({
-          code: couponCode.toUpperCase(),
-          isPublic: true,
-          expiresAt: { $gt: new Date() }
-        });
-
-        if (couponDoc) {
-          const isNewUser = !(await orderModel.findOne({ userId }));
-          const isMember = true;
-
-          if (
-            (couponDoc.forNewUser && isNewUser) ||
-            (couponDoc.forMember && isMember) ||
-            (!couponDoc.forNewUser && !couponDoc.forMember)
-          ) {
-            const discount = (total * couponDoc.discount) / 100;
-            total = Math.max(0, total - discount);
-            coupon = {
-              code: couponDoc.code,
-              discount: couponDoc.discount,
-              discountAmount: discount
-            };
-            isCouponUsed = true;
-          }
-        }
-      }
-
-      // 7. إنشاء الطلب
-      const order = new orderModel({
-        id: generateId(),
-        total,
-        userId,
-        storeId,
-        addressId,
-        paymentMethod,
-        isCouponUsed,
-        coupon,
-        orderItems: validatedItems
-      });
-
-      await order.save();
-
-      // 8. populate
-      const populatedOrder = await orderModel.findOne({ id: order.id })
-        .populate('userId', 'id name email')
-        .populate('storeId', 'id name username')
-        .populate('addressId', 'id street city country phone')
-        .populate('orderItems.productId', 'id name images colors'); // ← إضافة colors
-
-      createdOrders.push({
-        id: populatedOrder.id,
-        total: populatedOrder.total,
-        status: populatedOrder.status,
-        paymentMethod: populatedOrder.paymentMethod,
-        isPaid: populatedOrder.isPaid,
-        isCouponUsed: populatedOrder.isCouponUsed,
-        coupon: populatedOrder.coupon,
-        createdAt: populatedOrder.createdAt,
-        orderItems: populatedOrder.orderItems.map(item => ({
-          product: {
-            id: item.productId.id,
-            name: item.productId.name,
-            images: item.productId.images,
-            colors: item.productId.colors // ← إرجاع الألوان المتاحة
-          },
-          quantity: item.quantity,
-          price: item.price,
-          selectedColor: item.selectedColor // ← اللون المختار
-        })),
-        user: populatedOrder.userId,
-        store: populatedOrder.storeId,
-        address: populatedOrder.addressId
-      });
-    }
-
-    // 9. إفراغ السلة
-    cart.items = [];
+    // ✅ فضي الكارت بعد إنشاء الأوردر
+    cart.products = [];
     await cart.save();
 
-    // 10. إرسال الرد النهائي
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      message: `Created ${createdOrders.length} order(s)`,
-      orders: createdOrders
-    });
-
+      message: "Order created successfully",
+      order: newOrder,
+    });  
   } catch (error) {
-    console.error('❌ Error in createOrder:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Something went wrong while creating orders'
+    console.error("❌ Error creating order:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Server error", 
+      error: error.message 
     });
   }
 };
+
 
 
 // ✅ GET USER ORDERS (مع الألوان)

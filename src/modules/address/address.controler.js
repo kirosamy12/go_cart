@@ -2,41 +2,46 @@ import addressModel from '../../../DB/models/address.model.js';
 
 // 🔸 Create Address
 export const createAddress = async (req, res) => {
-    try {
-      const userId = req.user.id;
-      const { name, email, street, city, state, zip, country, phone } = req.body;
-  
-      if (!name || !street || !city || !state || !zip || !country || !phone) {
-        return res.status(400).json({
-          success: false,
-          message: 'All required fields must be provided'
-        });
-      }
-  
-      const newAddress = await addressModel.create({
-        userId, // ✅ String from token
-        name,
-        email,
-        street,
-        city,
-        state,
-        zip,
-        country,
-        phone
-      });
-  
-      res.status(201).json({
-        success: true,
-        address: newAddress
-      });
-    } catch (err) {
-      console.error('Create Address Error:', err);
-      res.status(500).json({
+  try {
+    // ✅ استخدم _id وحوله لـ string
+    const userId = req.user._id.toString();
+    
+    console.log("📝 Creating address for userId:", userId); // للتأكد
+    
+    const { name, email, street, city, state, zip, country, phone } = req.body;
+
+    if (!name || !street || !city || !state || !zip || !country || !phone) {
+      return res.status(400).json({
         success: false,
-        message: 'Something went wrong'
+        message: 'All required fields must be provided'
       });
     }
-  };
+
+    const newAddress = await addressModel.create({
+      userId, // ✅ دلوقتي هيبقى string صحيح
+      name,
+      email,
+      street,
+      city,
+      state,
+      zip,
+      country,
+      phone
+    });
+
+    res.status(201).json({
+      success: true,
+      address: newAddress
+    });
+  } catch (err) {
+    console.error('Create Address Error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong',
+      error: err.message // ✅ علشان تشوف الخطأ بالظبط
+    });
+  }
+};
   
   
 
