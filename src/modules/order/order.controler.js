@@ -12,15 +12,24 @@ const generateId = () => {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 };
 
+
 export const createOrder = async (req, res) => {
   try {
     const { addressId, paymentMethod, couponCode } = req.body;
 
-    const userId = req.user._id.toString();
+    const userId = req.user._id; // ✅ استخدم ObjectId مباشرة
 
     console.log("🧩 Debug Info:");
     console.log("addressId:", addressId);
     console.log("userId from token:", userId);
+
+    // ✅ تحقق من paymentMethod
+    if (!paymentMethod || !["CASH", "VISA"].includes(paymentMethod)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid payment method. Must be CASH or VISA" 
+      });
+    }
 
     if (!mongoose.Types.ObjectId.isValid(addressId)) {
       return res.status(400).json({ success: false, message: "Invalid address ID format" });
@@ -38,20 +47,13 @@ export const createOrder = async (req, res) => {
 
     console.log("🔍 Address found: ✅ YES");
 
-    if (address.userId !== userId) {
-      console.log("⚠️ Updating address userId to match current user");
-      address.userId = userId;
-      await address.save();
-    }
-
     // ✅ احضر الكارت بتاع المستخدم
-    const cart = await cartModel.findOne({ userId });
+    const cart = await cartModel.findOne({ userId: userId.toString() });
     
     console.log("🛒 Cart Debug:");
     console.log("Cart found:", !!cart);
-    console.log("Cart items:", cart?.items); // ✅ items مش products
+    console.log("Cart items:", cart?.items);
     
-    // ✅ تحقق صح من الكارت
     if (!cart) {
       return res.status(400).json({ 
         success: false, 
@@ -59,7 +61,6 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // ✅ استخدم items بدل products
     if (!cart.items || !Array.isArray(cart.items) || cart.items.length === 0) {
       return res.status(400).json({ 
         success: false, 
@@ -68,39 +69,110 @@ export const createOrder = async (req, res) => {
     }
 
     // ✅ احضر تفاصيل المنتجات من الداتابيس
-    const productsDetails = await Promise.all(
+    const orderItems = await Promise.all(
       cart.items.map(async (item) => {
-        const product = await productModel.findById(item.productId);
+        console.log("🔍 Looking for product:", item.productId);
+        
+        let product;
+        
+        // ✅ دور بطرق مختلفة
+        if (mongoose.Types.ObjectId.isValid(item.productId)) {
+          product = await productModel.findById(item.productId);
+        }
+        
         if (!product) {
+          product = await productModel.findOne({ 
+            $or: [
+              { id: item.productId },
+              { slug: item.productId },
+              { sku: item.productId }
+            ]
+          });
+        }
+        
+        if (!product) {
+          console.error(`❌ Product not found: ${item.productId}`);
           throw new Error(`Product ${item.productId} not found`);
         }
+        
+        console.log("✅ Product found:", product.name, "storeId:", product.storeId);
+        
+        // ✅ تأكد إن المنتج عنده storeId
+        if (!product.storeId) {
+          throw new Error(`Product ${product.name} doesn't have a storeId`);
+        }
+        
         return {
-          productId: item.productId,
-          name: product.name,
-          price: product.price,
+          productId: product._id, // ✅ استخدم ObjectId الصحيح
           quantity: item.quantity,
-          selectedColor: item.selectedColor,
-          image: product.image || product.images?.[0]
+          price: product.price,
+          selectedColor: item.selectedColor || null,
+          storeId: product.storeId // ✅ احفظ storeId للتحقق
         };
       })
     );
 
+    // ✅ تحقق إن كل المنتجات من نفس الـ store
+    const storeIds = [...new Set(orderItems.map(item => item.storeId.toString()))];
+    
+    if (storeIds.length > 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot create order with products from multiple stores. Please checkout one store at a time."
+      });
+    }
+    
+    const storeId = orderItems[0].storeId;
+
     // ✅ احسب إجمالي السعر
-    const totalPrice = productsDetails.reduce((acc, item) => {
+    const total = orderItems.reduce((acc, item) => {
       return acc + (item.price || 0) * (item.quantity || 0);
     }, 0);
 
-    console.log("💰 Total Price:", totalPrice);
+    console.log("💰 Total Price:", total);
+    console.log("🏪 Store ID:", storeId);
 
-    // ✅ أنشئ الأوردر
+    // ✅ معالجة الكوبون (لو موجود)
+    let couponData = {};
+    let isCouponUsed = false;
+    
+    if (couponCode) {
+      // ✅ دور على الكوبون في الداتابيس
+      const coupon = await couponModel.findOne({ code: couponCode, isActive: true });
+      
+      if (coupon) {
+        // يمكنك تطبيق خصم هنا
+        isCouponUsed = true;
+        couponData = {
+          code: coupon.code,
+          discount: coupon.discount
+        };
+        console.log("🎟️ Coupon applied:", couponCode);
+      } else {
+        console.log("⚠️ Invalid or inactive coupon:", couponCode);
+      }
+    }
+
+    // ✅ أنشئ الأوردر مع كل الـ fields المطلوبة
     const newOrder = await orderModel.create({
-      userId,
-      addressId,
-      paymentMethod,
-      couponCode,
-      totalPrice,
-      products: productsDetails, // ✅ نستخدم التفاصيل الكاملة
+      userId, // ✅ ObjectId
+      storeId, // ✅ ObjectId من المنتج
+      addressId, // ✅ ObjectId
+      paymentMethod, // ✅ CASH أو VISA
+      total, // ✅ مطلوب
+      isCouponUsed, // ✅ Boolean
+      coupon: couponData, // ✅ Object
+      orderItems: orderItems.map(item => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        price: item.price,
+        selectedColor: item.selectedColor
+      })), // ✅ بدون storeId في orderItems
+      status: "ORDER_PLACED", // ✅ default value
+      isPaid: paymentMethod === "VISA" ? false : false // يمكنك تعديله حسب منطق الدفع
     });
+
+    console.log("✅ Order created successfully:", newOrder._id);
 
     // ✅ فضي الكارت بعد إنشاء الأوردر
     cart.items = [];
