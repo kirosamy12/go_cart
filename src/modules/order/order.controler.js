@@ -49,7 +49,7 @@ export const createOrder = async (req, res) => {
     
     console.log("🛒 Cart Debug:");
     console.log("Cart found:", !!cart);
-    console.log("Cart products:", cart?.products);
+    console.log("Cart items:", cart?.items); // ✅ items مش products
     
     // ✅ تحقق صح من الكارت
     if (!cart) {
@@ -59,15 +59,34 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    if (!cart.products || !Array.isArray(cart.products) || cart.products.length === 0) {
+    // ✅ استخدم items بدل products
+    if (!cart.items || !Array.isArray(cart.items) || cart.items.length === 0) {
       return res.status(400).json({ 
         success: false, 
         message: "Your cart is empty" 
       });
     }
 
+    // ✅ احضر تفاصيل المنتجات من الداتابيس
+    const productsDetails = await Promise.all(
+      cart.items.map(async (item) => {
+        const product = await productModel.findById(item.productId);
+        if (!product) {
+          throw new Error(`Product ${item.productId} not found`);
+        }
+        return {
+          productId: item.productId,
+          name: product.name,
+          price: product.price,
+          quantity: item.quantity,
+          selectedColor: item.selectedColor,
+          image: product.image || product.images?.[0]
+        };
+      })
+    );
+
     // ✅ احسب إجمالي السعر
-    const totalPrice = cart.products.reduce((acc, item) => {
+    const totalPrice = productsDetails.reduce((acc, item) => {
       return acc + (item.price || 0) * (item.quantity || 0);
     }, 0);
 
@@ -80,11 +99,11 @@ export const createOrder = async (req, res) => {
       paymentMethod,
       couponCode,
       totalPrice,
-      products: cart.products,
+      products: productsDetails, // ✅ نستخدم التفاصيل الكاملة
     });
 
     // ✅ فضي الكارت بعد إنشاء الأوردر
-    cart.products = [];
+    cart.items = [];
     await cart.save();
 
     return res.status(201).json({
