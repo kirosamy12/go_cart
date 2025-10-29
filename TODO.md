@@ -29,6 +29,7 @@
 - [x] Integrate analytics routes into main application
 - [x] Fix typo in order routes (stote -> store)
 - [x] Create API documentation for analytics endpoints
+- [x] Fix store ID lookup in store analytics endpoint
 
 ## Files to be modified:
 - `src/modules/store/store.controler.js` - Main fixes for error handling
@@ -45,3 +46,4 @@
 - [ ] Add comprehensive logging for debugging
 - [x] Test analytics endpoints
 - [x] Verify API responses for all analytics endpoints
+- [x] Fix store ID lookup issue in analytics

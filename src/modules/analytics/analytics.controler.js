@@ -120,11 +120,24 @@ export const getOverallAnalytics = async (req, res) => {
 // 🏪 STORE ANALYTICS
 export const getStoreAnalytics = async (req, res) => {
   try {
-    const storeId = req.user?.storeId || req.query.storeId;
-    if (!storeId) {
-      return res.status(400).json({ success: false, message: "Store ID is required" });
+    // Get user ID from the authenticated user
+    const userId = req.user?.id || req.user?.userId;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "User ID not found in token" });
     }
 
+    console.log("Analytics - User ID:", userId);
+
+    // Find the store associated with this user
+    const store = await storeModel.findOne({ userId });
+    if (!store) {
+      console.log("Analytics - Store not found for user ID:", userId);
+      return res.status(400).json({ success: false, message: "Store not found for this user" });
+    }
+
+    console.log("Analytics - Store found:", store.name, store._id);
+
+    const storeId = store._id;
     const storeObjectId = new mongoose.Types.ObjectId(storeId);
 
     // 📊 Store Metrics
@@ -203,6 +216,11 @@ export const getStoreAnalytics = async (req, res) => {
     res.json({
       success: true,
       data: {
+        store: {
+          id: store.id,
+          name: store.name,
+          username: store.username
+        },
         metrics: {
           totalOrders,
           totalRevenue,
