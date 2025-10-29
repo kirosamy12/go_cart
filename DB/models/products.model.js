@@ -27,6 +27,10 @@ const productSchema = new mongoose.Schema({
     type: [String],     // 👈 مصفوفة ألوان مثل ['Red', 'Blue', 'Black']
     default: []         // 👈 مش إلزامي، فلو المستخدم ما أرسلش ألوان بتبقى فاضية
   },
+  sizes: {
+    type: [String],     // 👈 مصفوفة مقاسات مثل ['S', 'M', 'L', 'XL']
+    default: []         // 👈 مش إلزامي، فلو المستخدم ما أرسلش مقاسات بتبقى فاضية
+  },
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',

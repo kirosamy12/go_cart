@@ -6,9 +6,7 @@ import router from "./modules/order/order.routes.js";
 import productRouter from "./modules/products/products.route.js";
 import authRouter from "./modules/store/store.route.js";
 import address from "./modules/address/address.route.js"
-
-
-
+import analyticsRouter from "./modules/analytics/analytics.routes.js";
 
 export const allRoutes=(app)=>{
     app.use("/api",categoryRouter)
@@ -19,22 +17,15 @@ export const allRoutes=(app)=>{
     app.use("/api/auth",auth)
  //   app.use("/api/v1",wishListRouter)
  //   app.use("/api/v1",couponRouter)
-app.use("/api",cartRouter)
+    app.use("/api",cartRouter)
     app.use("/api",router)
     app.use("/api",address)
+    app.use("/api/analytics", analyticsRouter)
   //  app.use("/api/v1",bannerRouter)
-
-
-
-
-
-
-
-
 
     // app.all('*', (req, res, next) => {
     //     next(new AppError(`Cannot find ${req.originalUrl} on this server!`, 404));
     //   });
 
       app.use(globalErrorHandler);
-}  
+}

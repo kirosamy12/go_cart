@@ -65,6 +65,10 @@ export const updateCart = async (req, res) => {
       if (item.selectedColor && typeof item.selectedColor !== 'string') {
         return res.status(400).json({ success: false, message: 'Invalid color format' });
       }
+      
+      if (item.selectedSize && typeof item.selectedSize !== 'string') {
+        return res.status(400).json({ success: false, message: 'Invalid size format' });
+      }
     }
 
     const updated = await cartModel.findOneAndUpdate(
@@ -88,7 +92,7 @@ export const updateCart = async (req, res) => {
 export const addToCart = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { productId, quantity, selectedColor } = req.body;
+    const { productId, quantity, selectedColor, selectedSize } = req.body;
 
     if (!productId || typeof productId !== 'string') {
       return res.status(400).json({ success: false, message: 'Invalid productId format' });
@@ -108,20 +112,22 @@ export const addToCart = async (req, res) => {
     if (!cart) {
       cart = await cartModel.create({
         userId,
-        items: [{ productId, quantity, selectedColor }]
+        items: [{ productId, quantity, selectedColor, selectedSize }]
       });
       return res.status(201).json({ success: true, cart });
     }
 
-    // ✅ لو نفس المنتج ونفس اللون موجودين بالفعل، زوّد الكمية
+    // ✅ لو نفس المنتج ونفس اللون والمقاس موجودين بالفعل، زوّد الكمية
     const existingItem = cart.items.find(
-      item => item.productId === productId && item.selectedColor === selectedColor
+      item => item.productId === productId && 
+              item.selectedColor === selectedColor && 
+              item.selectedSize === selectedSize
     );
 
     if (existingItem) {
       existingItem.quantity += quantity;
     } else {
-      cart.items.push({ productId, quantity, selectedColor });
+      cart.items.push({ productId, quantity, selectedColor, selectedSize });
     }
 
     await cart.save();
@@ -136,7 +142,7 @@ export const addToCart = async (req, res) => {
 export const removeItemFromCart = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { productId, color } = req.params;
+    const { productId, color, size } = req.params;
 
     if (!productId || typeof productId !== 'string') {
       return res.status(400).json({ success: false, message: 'Invalid productId' });
@@ -147,10 +153,28 @@ export const removeItemFromCart = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Cart not found' });
     }
 
+    // Filter items based on what parameters were provided
     const originalLength = cart.items.length;
-    cart.items = cart.items.filter(
-      item => !(item.productId === productId && item.selectedColor === color)
-    );
+    
+    if (color && size) {
+      // Remove specific item with color and size
+      cart.items = cart.items.filter(
+        item => !(item.productId === productId && 
+                  item.selectedColor === color && 
+                  item.selectedSize === size)
+      );
+    } else if (color) {
+      // Remove items with specific color (no size specified)
+      cart.items = cart.items.filter(
+        item => !(item.productId === productId && 
+                  item.selectedColor === color)
+      );
+    } else {
+      // Remove all items with this productId (no color/size specified)
+      cart.items = cart.items.filter(
+        item => !(item.productId === productId)
+      );
+    }
 
     if (cart.items.length === originalLength) {
       return res.status(404).json({ success: false, message: 'Item not found in cart' });

@@ -107,6 +107,7 @@ export const createOrder = async (req, res) => {
           quantity: item.quantity,
           price: product.price,
           selectedColor: item.selectedColor || null,
+          selectedSize: item.selectedSize || null, // ✅ إضافة المقاس المحدد
           storeId: product.storeId // ✅ احفظ storeId للتحقق
         };
       })
@@ -166,7 +167,8 @@ export const createOrder = async (req, res) => {
         productId: item.productId,
         quantity: item.quantity,
         price: item.price,
-        selectedColor: item.selectedColor
+        selectedColor: item.selectedColor,
+        selectedSize: item.selectedSize
       })), // ✅ بدون storeId في orderItems
       status: "ORDER_PLACED", // ✅ default value
       isPaid: paymentMethod === "VISA" ? false : false // يمكنك تعديله حسب منطق الدفع
@@ -209,7 +211,7 @@ export const getUserOrders = async (req, res) => {
       orderModel.find(query)
         .populate('storeId', 'id name username logo')
         .populate('addressId', 'street city state country phone')
-        .populate('orderItems.productId', 'id name images colors') // ← إضافة colors
+        .populate('orderItems.productId', 'id name images colors') // ← إضافة colors و sizes
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit, 10)),
@@ -278,7 +280,7 @@ export const getOrderById = async (req, res) => {
     const order = await orderModel.findOne({ id: orderId })
       .populate('storeId', 'id name username logo')
       .populate('addressId', 'street city state country phone')
-      .populate('orderItems.productId', 'id name images colors'); // ← إضافة colors
+      .populate('orderItems.productId', 'id name images colors sizes'); // ← إضافة colors و sizes
 
     if (!order) {
       return res.status(404).json({
@@ -307,11 +309,13 @@ export const getOrderById = async (req, res) => {
             id: item.productId.id,
             name: item.productId.name,
             images: item.productId.images,
-            colors: item.productId.colors // ← الألوان المتاحة
+            colors: item.productId.colors, // ← الألوان المتاحة
+            sizes: item.productId.sizes // ← المقاسات المتاحة
           },
           quantity: item.quantity,
           price: item.price,
-          selectedColor: item.selectedColor // ← اللون المختار
+          selectedColor: item.selectedColor, // ← اللون المختار
+          selectedSize: item.selectedSize // ← المقاس المختار
         }))
       }
     });
@@ -351,7 +355,7 @@ export const getStoreOrders = async (req, res) => {
       orderModel.find(query)
         .populate('userId', 'id name email phone')
         .populate('addressId', 'street city state country phone')
-        .populate('orderItems.productId', 'id name images price colors') // ← إضافة colors
+        .populate('orderItems.productId', 'id name images price colors sizes') // ← إضافة colors و sizes
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit, 10)),
@@ -380,11 +384,13 @@ export const getStoreOrders = async (req, res) => {
             name: item.productId.name,
             images: item.productId.images,
             price: item.productId.price,
-            colors: item.productId.colors // ← الألوان المتاحة
+            colors: item.productId.colors, // ← الألوان المتاحة
+            sizes: item.productId.sizes // ← المقاسات المتاحة
           },
           quantity: item.quantity,
           price: item.price,
-          selectedColor: item.selectedColor // ← اللون المختار
+          selectedColor: item.selectedColor, // ← اللون المختار
+          selectedSize: item.selectedSize // ← المقاس المختار
         }))
       })),
 
@@ -484,7 +490,7 @@ export const updateOrderStatus = async (req, res) => {
     const updatedOrder = await orderModel.findOne({ id: orderId })
       .populate('userId', 'id name email phone')
       .populate('addressId', 'street city state country phone')
-      .populate('orderItems.productId', 'id name images price colors'); // ← إضافة colors
+      .populate('orderItems.productId', 'id name images price colors sizes'); // ← إضافة colors و sizes
 
     res.json({
       success: true,
@@ -504,11 +510,13 @@ export const updateOrderStatus = async (req, res) => {
             name: item.productId.name,
             images: item.productId.images,
             price: item.productId.price,
-            colors: item.productId.colors // ← الألوان المتاحة
+            colors: item.productId.colors, // ← الألوان المتاحة
+            sizes: item.productId.sizes // ← المقاسات المتاحة
           },
           quantity: item.quantity,
           price: item.price,
-          selectedColor: item.selectedColor // ← اللون المختار
+          selectedColor: item.selectedColor, // ← اللون المختار
+          selectedSize: item.selectedSize // ← المقاس المختار
         }))
       }
     });
@@ -538,7 +546,7 @@ export const getOrderTracking = async (req, res) => {
     const order = await orderModel.findOne({ id: orderId })
       .populate('storeId', 'id name username logo contact')
       .populate('addressId', 'street city state country phone')
-      .populate('orderItems.productId', 'id name images colors'); // ← إضافة colors
+      .populate('orderItems.productId', 'id name images colors sizes'); // ← إضافة colors و sizes
 
     if (!order) {
       return res.status(404).json({
@@ -684,7 +692,7 @@ export const getMyOrders = async (req, res) => {
     const [stores, addresses, products] = await Promise.all([
       storeModel.find({ _id: { $in: storeIds } }).lean(),
       addressModel.find({ _id: { $in: addressIds } }).lean(),
-      productModel.find({ _id: { $in: productIds } }).lean() // ← جلب المنتجات مع colors
+      productModel.find({ _id: { $in: productIds } }).lean() // ← جلب المنتجات مع colors و sizes
     ]);
 
     const storeMap = {};
@@ -712,11 +720,13 @@ export const getMyOrders = async (req, res) => {
             id: product.id,
             name: product.name,
             images: product.images,
-            colors: product.colors // ← الألوان المتاحة
+            colors: product.colors, // ← الألوان المتاحة
+            sizes: product.sizes // ← المقاسات المتاحة
           } : null,
           quantity: item.quantity,
           price: item.price,
-          selectedColor: item.selectedColor // ← اللون المختار
+          selectedColor: item.selectedColor, // ← اللون المختار
+          selectedSize: item.selectedSize // ← المقاس المختار
         };
       })
     }));
@@ -794,11 +804,13 @@ export const trackOrder = async (req, res) => {
               id: product.id,
               name: product.name,
               images: product.images,
-              colors: product.colors // ← الألوان المتاحة
+              colors: product.colors, // ← الألوان المتاحة
+              sizes: product.sizes // ← المقاسات المتاحة
             } : { id: i.productId },
             quantity: i.quantity,
             price: i.price,
-            selectedColor: i.selectedColor // ← اللون المختار
+            selectedColor: i.selectedColor, // ← اللون المختار
+            selectedSize: i.selectedSize // ← المقاس المختار
           };
         }),
         steps: order.status === "cancelled" ? [trackingSteps[0], cancelledStep] : trackingSteps,
@@ -885,7 +897,9 @@ export const getInvoiceById = async (req, res) => {
         productId: it.productId,
         name: (product && product.name) || "Product",
         selectedColor: it.selectedColor || null, // ← اللون المختار
+        selectedSize: it.selectedSize || null, // ← المقاس المختار
         availableColors: (product && product.colors) || [], // ← الألوان المتاحة
+        availableSizes: (product && product.sizes) || [], // ← المقاسات المتاحة
         quantity: it.quantity,
         unitPrice: it.price,
         lineTotal: it.price * it.quantity
@@ -925,8 +939,6 @@ export const getInvoiceById = async (req, res) => {
     res.status(500).json({ success: false, message: "Something went wrong while fetching invoice" });
   }
 };
-
-
 
 
 

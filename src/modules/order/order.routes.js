@@ -44,7 +44,7 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get("/order/invoice/:orderId", protectRoutes, getInvoiceById);
  
  router.get("/dashbord/admin", protectRoutes, allowTo("admin"), getAdminDashboard);
- router.get("/dashbord/store", protectRoutes, allowTo("stote"), getStoreDashboard);
+ router.get("/dashbord/store", protectRoutes, allowTo("store"), getStoreDashboard);
 
 export default router;
        

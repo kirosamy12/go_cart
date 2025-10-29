@@ -23,13 +23,25 @@
 - [ ] Add endpoint to check store status by user ID
 - [ ] Add store reactivation functionality if needed
 
+### 6. Analytics Implementation
+- [x] Create analytics controller with comprehensive metrics
+- [x] Create analytics routes for overall, store-specific, and sales analytics
+- [x] Integrate analytics routes into main application
+- [x] Fix typo in order routes (stote -> store)
+- [x] Create API documentation for analytics endpoints
+
 ## Files to be modified:
 - `src/modules/store/store.controler.js` - Main fixes for error handling
 - `src/modules/store/store.route.js` - Add new debugging endpoints
 - `DB/models/store.model.js` - Add any needed validation
+- `src/modules/analytics/analytics.controler.js` - New analytics controller
+- `src/modules/analytics/analytics.routes.js` - New analytics routes
+- `src/index.routes.js` - Integration of analytics routes
 
 ## Testing Steps:
 - [ ] Test the store retrieval endpoints
 - [ ] Verify database connectivity
 - [ ] Check existing stores in the database
 - [ ] Add comprehensive logging for debugging
+- [x] Test analytics endpoints
+- [x] Verify API responses for all analytics endpoints

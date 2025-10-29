@@ -14,6 +14,7 @@ export const createProduct = async (req, res) => {
       price,
       images,
       colors, // ← الألوان اختيارية
+      sizes,  // ← المقاسات اختيارية
       category,
       inStock
     } = req.body;
@@ -58,6 +59,7 @@ export const createProduct = async (req, res) => {
       price,
       images,
       colors: colors || [], // ← إذا مفيش ألوان يبقى array فاضي
+      sizes: sizes || [],   // ← إذا مفيش مقاسات يبقى array فاضي
       category,
       inStock: inStock !== undefined ? inStock : true,
       storeId: store._id
@@ -253,6 +255,7 @@ export const updateProduct = async (req, res) => {
       'price',
       'images',
       'colors', // ← إضافة الألوان للحقول المسموحة
+      'sizes',  // ← إضافة المقاسات للحقول المسموحة
       'category',
       'inStock',
       'storeId'
@@ -276,6 +279,14 @@ export const updateProduct = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Colors must be an array'
+      });
+    }
+
+    // لو عايز تحديث المقاسات، اتأكد إنها array
+    if (updates.sizes && !Array.isArray(updates.sizes)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sizes must be an array'
       });
     }
 

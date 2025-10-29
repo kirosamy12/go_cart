@@ -19,6 +19,10 @@ const embeddedOrderItemSchema = new mongoose.Schema({
   selectedColor: {
     type: String,
     default: null  // ← إضافة هذا الحقل
+  },
+  selectedSize: {
+    type: String,
+    default: null  // ← إضافة هذا الحقل للحجم
   }
 }, { _id: false });
 
