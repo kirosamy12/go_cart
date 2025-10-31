@@ -20,9 +20,6 @@ import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js'
 
 const router = express.Router();
 
-
-
-
 // Order management
 router.post('/createOrder',protectRoutes, createOrder);
 router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
@@ -39,7 +36,7 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get("/use/order/myOrders", protectRoutes, getMyOrders);
  router.get("/track/:orderId", protectRoutes, trackOrder);
  
- // فواتير المستخدم
+ // Invoices
  router.get("/order/invoices", protectRoutes, getInvoices);
  router.get("/order/invoice/:orderId", protectRoutes, getInvoiceById);
  
@@ -47,6 +44,3 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get("/dashbord/store", protectRoutes, allowTo("store"), getStoreDashboard);
 
 export default router;
-       
-     
- 

@@ -966,23 +966,25 @@ const calculateTotalRevenue = async (matchFilter = {}) => {
 // ===================================================
 export const getStoreDashboard = async (req, res) => {
   try {
-    const storeId = req.user?.storeId || req.query.storeId;
-    if (!storeId) {
-      return res.status(400).json({ message: "Store ID is required" });
+    // Get store for the authenticated user
+    const store = await storeModel.findOne({ userId: req.user.id });
+    if (!store) {
+      return res.status(400).json({ message: "Store not found for this user" });
     }
 
+    const storeId = store._id;
     const storeObjectId = new mongoose.Types.ObjectId(storeId);
 
-    // 🧮 عدد الطلبات
+    // 🧮 Total Orders Count
     const totalOrders = await orderModel.countDocuments({ storeId: storeObjectId });
 
-    // 💰 الأرباح الكلية
+    // 💰 Total Revenue
     const totalRevenue = await calculateTotalRevenue({ storeId: storeObjectId });
 
-    // 📦 عدد المنتجات
+    // 📦 Total Products
     const totalProducts = await productModel.countDocuments({ storeId: storeObjectId });
 
-    // 🏆 أكثر منتج مبيعًا
+    // 🏆 Top Selling Product
     const topProduct = await orderModel.aggregate([
       { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $unwind: "$orderItems" },
@@ -1001,7 +1003,7 @@ export const getStoreDashboard = async (req, res) => {
       { $project: { productName: "$product.name", totalSold: 1 } },
     ]);
 
-    // 📊 مبيعات شهرية
+    // 📊 Monthly Sales Data
     const monthlySales = await orderModel.aggregate([
       { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
@@ -1013,14 +1015,103 @@ export const getStoreDashboard = async (req, res) => {
       { $sort: { "_id": 1 } },
     ]);
 
+    // 📅 Recent Orders (last 5 orders)
+    const recentOrders = await orderModel.find({ storeId: storeObjectId })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('userId', 'id name email')
+      .select('id total status createdAt');
+
+    // 📊 Sales Analytics (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const salesAnalytics = await orderModel.aggregate([
+      { $match: { storeId: storeObjectId, createdAt: { $gte: thirtyDaysAgo }, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          count: { $sum: 1 },
+          total: { $sum: "$total" }
+        }
+      },
+      { $sort: { "_id": 1 } },
+      { $limit: 30 }
+    ]);
+
+    // 🕒 Recent Activity (last 5 updated orders)
+    const recentActivity = await orderModel.find({ storeId: storeObjectId })
+      .sort({ updatedAt: -1 })
+      .limit(5)
+      .select('id status updatedAt');
+
+    // ⏳ Pending Orders (orders with status ORDER_PLACED or PROCESSING)
+    const pendingOrders = await orderModel.find({ 
+      storeId: storeObjectId, 
+      status: { $in: ["ORDER_PLACED", "PROCESSING"] } 
+    }).sort({ createdAt: -1 })
+    .populate('userId', 'id name email')
+    .select('id total status createdAt');
+
     res.json({
       success: true,
       data: {
-        totalOrders,
-        totalRevenue,
-        totalProducts,
-        topProduct: topProduct[0] || null,
+        // Store information
+        store: {
+          id: store.id,
+          name: store.name,
+          username: store.username,
+          logo: store.logo,
+          status: store.status,
+          isActive: store.isActive
+        },
+        
+        // Key metrics
+        metrics: {
+          totalOrders,
+          totalRevenue,
+          totalProducts,
+          topProduct: topProduct[0] || null
+        },
+        
+        // Monthly sales chart data
         monthlySales,
+        
+        // Recent Orders Section
+        recentOrders: recentOrders.map(order => ({
+          id: order.id,
+          total: order.total,
+          status: order.status,
+          customer: {
+            name: order.userId?.name || 'Unknown',
+            email: order.userId?.email || 'N/A'
+          },
+          createdAt: order.createdAt
+        })),
+        
+        // Sales Analytics Section
+        salesAnalytics,
+        
+        // Recent Activity Section
+        recentActivity: recentActivity.map(activity => ({
+          id: activity.id,
+          status: activity.status,
+          updatedAt: activity.updatedAt
+        })),
+        
+        // Pending Orders Section
+        pendingOrders: pendingOrders.map(order => ({
+          id: order.id,
+          total: order.total,
+          status: order.status,
+          customer: {
+            name: order.userId?.name || 'Unknown',
+            email: order.userId?.email || 'N/A'
+          },
+          createdAt: order.createdAt
+        }))
       },
     });
   } catch (err) {
@@ -1034,19 +1125,19 @@ export const getStoreDashboard = async (req, res) => {
 // ===================================================
 export const getAdminDashboard = async (req, res) => {
   try {
-    // 🏬 عدد المتاجر
+    // 🏬 Total Stores
     const totalStores = await storeModel.countDocuments();
 
-    // 👥 عدد المستخدمين
+    // 👥 Total Users
     const totalUsers = await userModel.countDocuments({ role: "user" });
 
-    // 💸 الأرباح العامة (من جميع الطلبات)
+    // 💸 Total Revenue (from all orders)
     const totalRevenue = await calculateTotalRevenue();
 
-    // 🧾 عدد الطلبات الكلية
+    // 🧾 Total Orders
     const totalOrders = await orderModel.countDocuments();
 
-    // 💰 مقارنة أرباح المتاجر
+    // 💰 Store Revenue Comparison
     const storeRevenues = await orderModel.aggregate([
       { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $group: { _id: "$storeId", revenue: { $sum: "$total" } } },
@@ -1068,10 +1159,10 @@ export const getAdminDashboard = async (req, res) => {
       { $sort: { revenue: -1 } },
     ]);
 
-    // 🏆 أعلى متجر مبيعًا
+    // 🏆 Top Store by Sales
     const topStore = storeRevenues[0] || null;
 
-    // 📈 معدل النمو الشهري في المبيعات
+    // 📈 Monthly Revenue Growth Rate
     const monthlyRevenue = await orderModel.aggregate([
       { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
