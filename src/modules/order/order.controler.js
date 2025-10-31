@@ -945,7 +945,7 @@ export const getInvoiceById = async (req, res) => {
 
 const calculateTotalRevenue = async (matchFilter = {}) => {
   const result = await orderModel.aggregate([
-    { $match: { status: "DELIVERED", ...matchFilter } },
+    { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] }, ...matchFilter } },
     { $group: { _id: null, totalRevenue: { $sum: "$total" } } },
   ]);
   return result[0]?.totalRevenue || 0;
@@ -974,7 +974,7 @@ export const getStoreDashboard = async (req, res) => {
 
     // 🏆 أكثر منتج مبيعًا
     const topProduct = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $unwind: "$orderItems" },
       { $group: { _id: "$orderItems.productId", totalSold: { $sum: "$orderItems.quantity" } } },
       { $sort: { totalSold: -1 } },
@@ -993,7 +993,7 @@ export const getStoreDashboard = async (req, res) => {
 
     // 📊 مبيعات شهرية
     const monthlySales = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
         $group: {
           _id: { $month: "$createdAt" },
@@ -1030,7 +1030,7 @@ export const getAdminDashboard = async (req, res) => {
     // 👥 عدد المستخدمين
     const totalUsers = await userModel.countDocuments({ role: "user" });
 
-    // 💸 الأرباح العامة (من جميع الطلبات الـDelivered)
+    // 💸 الأرباح العامة (من جميع الطلبات)
     const totalRevenue = await calculateTotalRevenue();
 
     // 🧾 عدد الطلبات الكلية
@@ -1038,7 +1038,7 @@ export const getAdminDashboard = async (req, res) => {
 
     // 💰 مقارنة أرباح المتاجر
     const storeRevenues = await orderModel.aggregate([
-      { $match: { status: "DELIVERED" } },
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $group: { _id: "$storeId", revenue: { $sum: "$total" } } },
       {
         $lookup: {
@@ -1063,7 +1063,7 @@ export const getAdminDashboard = async (req, res) => {
 
     // 📈 معدل النمو الشهري في المبيعات
     const monthlyRevenue = await orderModel.aggregate([
-      { $match: { status: "DELIVERED" } },
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
         $group: {
           _id: { $month: "$createdAt" },

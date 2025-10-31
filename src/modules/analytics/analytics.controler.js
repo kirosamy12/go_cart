@@ -9,7 +9,7 @@ import mongoose from 'mongoose';
 // Helper function to calculate total revenue
 const calculateTotalRevenue = async (matchFilter = {}) => {
   const result = await orderModel.aggregate([
-    { $match: { status: "DELIVERED", ...matchFilter } },
+    { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] }, ...matchFilter } },
     { $group: { _id: null, totalRevenue: { $sum: "$total" } } },
   ]);
   return result[0]?.totalRevenue || 0;
@@ -62,7 +62,7 @@ export const getOverallAnalytics = async (req, res) => {
 
     // 🏬 Top Stores by Revenue
     const storeRevenues = await orderModel.aggregate([
-      { $match: { status: "DELIVERED" } },
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $group: { _id: "$storeId", revenue: { $sum: "$total" } } },
       {
         $lookup: {
@@ -85,7 +85,7 @@ export const getOverallAnalytics = async (req, res) => {
 
     // 📦 Top Products by Sales
     const topProducts = await orderModel.aggregate([
-      { $match: { status: "DELIVERED" } },
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $unwind: "$orderItems" },
       { $group: { _id: "$orderItems.productId", totalSold: { $sum: "$orderItems.quantity" } } },
       { $sort: { totalSold: -1 } },
@@ -107,7 +107,7 @@ export const getOverallAnalytics = async (req, res) => {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
     const ordersByDay = await orderModel.aggregate([
-      { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+      { $match: { createdAt: { $gte: thirtyDaysAgo }, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
         $group: {
           _id: {
@@ -122,7 +122,7 @@ export const getOverallAnalytics = async (req, res) => {
 
     // 📊 Revenue by Category
     const revenueByCategory = await orderModel.aggregate([
-      { $match: { status: "DELIVERED" } },
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $unwind: "$orderItems" },
       {
         $lookup: {
@@ -205,7 +205,7 @@ export const getStoreAnalytics = async (req, res) => {
 
     // 📦 Top Selling Products
     const topProducts = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $unwind: "$orderItems" },
       { $group: { _id: "$orderItems.productId", totalSold: { $sum: "$orderItems.quantity" } } },
       { $sort: { totalSold: -1 } },
@@ -227,7 +227,7 @@ export const getStoreAnalytics = async (req, res) => {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
     const ordersByDay = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, createdAt: { $gte: thirtyDaysAgo } } },
+      { $match: { storeId: storeObjectId, createdAt: { $gte: thirtyDaysAgo }, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
         $group: {
           _id: {
@@ -242,7 +242,7 @@ export const getStoreAnalytics = async (req, res) => {
 
     // 💰 Revenue by Category
     const revenueByCategory = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $unwind: "$orderItems" },
       {
         $lookup: {
@@ -273,7 +273,7 @@ export const getStoreAnalytics = async (req, res) => {
 
     // 📊 Quarterly Sales Report
     const quarterlyReports = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
         $group: {
           _id: {
@@ -303,7 +303,7 @@ export const getStoreAnalytics = async (req, res) => {
 
     // 📈 Product Performance Metrics
     const productPerformance = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $unwind: "$orderItems" },
       {
         $group: {
@@ -397,7 +397,7 @@ export const getSalesAnalytics = async (req, res) => {
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
     
     const revenueByMonth = await orderModel.aggregate([
-      { $match: { status: "DELIVERED", createdAt: { $gte: twelveMonthsAgo } } },
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] }, createdAt: { $gte: twelveMonthsAgo } } },
       {
         $group: {
           _id: {
@@ -421,7 +421,7 @@ export const getSalesAnalytics = async (req, res) => {
 
     // 🏬 Revenue by Store (top 10)
     const revenueByStore = await orderModel.aggregate([
-      { $match: { status: "DELIVERED" } },
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $group: { _id: "$storeId", revenue: { $sum: "$total" }, orderCount: { $sum: 1 } } },
       {
         $lookup: {
@@ -447,7 +447,7 @@ export const getSalesAnalytics = async (req, res) => {
     const totalPlatformRevenue = await calculateTotalRevenue();
     
     const marketShare = await orderModel.aggregate([
-      { $match: { status: "DELIVERED" } },
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $group: { _id: "$storeId", revenue: { $sum: "$total" } } },
       {
         $lookup: {
@@ -477,7 +477,7 @@ export const getSalesAnalytics = async (req, res) => {
 
     // 📈 Quarterly Platform Performance
     const quarterlyPerformance = await orderModel.aggregate([
-      { $match: { status: "DELIVERED" } },
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
         $group: {
           _id: {
@@ -580,7 +580,7 @@ export const getProductAnalytics = async (req, res) => {
     // Sales performance
     const salesData = await orderModel.aggregate([
       { $unwind: "$orderItems" },
-      { $match: { "orderItems.productId": productObjectId, status: "DELIVERED" } },
+      { $match: { "orderItems.productId": productObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
         $group: {
           _id: {
@@ -653,7 +653,7 @@ export const getAdvancedStoreAnalytics = async (req, res) => {
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
     
     const revenueTrend = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED", createdAt: { $gte: twelveMonthsAgo } } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] }, createdAt: { $gte: twelveMonthsAgo } } },
       {
         $group: {
           _id: {
@@ -686,7 +686,7 @@ export const getAdvancedStoreAnalytics = async (req, res) => {
 
     // 📦 Product Sales Distribution
     const productSalesDistribution = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $unwind: "$orderItems" },
       {
         $group: {
@@ -716,7 +716,7 @@ export const getAdvancedStoreAnalytics = async (req, res) => {
 
     // 📅 Order Volume by Day of Week
     const orderVolumeByDay = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       {
         $group: {
           _id: { $dayOfWeek: "$createdAt" },
@@ -740,7 +740,7 @@ export const getAdvancedStoreAnalytics = async (req, res) => {
 
     // 📊 Customer Acquisition Trend (New Customers)
     const customerAcquisition = await orderModel.aggregate([
-      { $match: { storeId: storeObjectId, status: "DELIVERED" } },
+      { $match: { storeId: storeObjectId, status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
       { $group: { _id: "$userId", firstOrder: { $min: "$createdAt" } } },
       {
         $group: {
