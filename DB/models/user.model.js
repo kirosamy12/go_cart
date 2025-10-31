@@ -32,8 +32,8 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['user', 'admin','stote'], // 👈 فقط يسمح بهذه القيم
-    default: 'user' // 👈 افتراضيًا كل مستخدم بيكون يوزر
+    enum: ['user', 'admin', 'store'], // Fixed typo: 'stote' -> 'store'
+    default: 'user'
   }
 }, {
   timestamps: true

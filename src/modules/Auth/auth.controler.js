@@ -112,12 +112,23 @@ export const login = async (req, res) => {
   }
 
   // Generate JWT token
+  // For store users, include storeId in the token
+  const tokenPayload = {
+    userId: user.id,
+    email: user.email,
+    role: user.role
+  };
+  
+  // If user is a store owner, add storeId to token
+  if (user.role === 'store') {
+    const store = await storeModel.findOne({ userId: user.id });
+    if (store) {
+      tokenPayload.storeId = store.id;
+    }
+  }
+  
   const token = jwt.sign(
-    {
-      userId: user.id,
-      email: user.email,
-      role: user.role // 👈 ضفنا role هنا
-    },
+    tokenPayload,
     process.env.JWT_SECRET || "kiro", // من الأفضل يكون في .env
     { expiresIn: "24h" }
   );
@@ -247,6 +258,11 @@ export const protectRoutes = handleError(async (req, res, next) => {
       });
     }
   }
+  // Add storeId to user object if available in token
+  if (decoded.storeId) {
+    user.storeId = decoded.storeId;
+  }
+  
   req.user = user;
 
   next();
