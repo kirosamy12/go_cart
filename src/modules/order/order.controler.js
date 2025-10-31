@@ -156,6 +156,7 @@ export const createOrder = async (req, res) => {
 
     // ✅ أنشئ الأوردر مع كل الـ fields المطلوبة
     const newOrder = await orderModel.create({
+      id: Math.random().toString(36).substr(2, 9) + Date.now().toString(36), // ✅ Generate unique ID
       userId, // ✅ ObjectId
       storeId, // ✅ ObjectId من المنتج
       addressId, // ✅ ObjectId
