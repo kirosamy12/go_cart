@@ -183,7 +183,16 @@ export const createOrder = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Order created successfully",
-      order: newOrder,
+      order: {
+        id: newOrder.id,
+        total: newOrder.total,
+        status: newOrder.status,
+        paymentMethod: newOrder.paymentMethod,
+        isPaid: newOrder.isPaid,
+        isCouponUsed: newOrder.isCouponUsed,
+        coupon: newOrder.coupon,
+        createdAt: newOrder.createdAt,
+      },
     });  
   } catch (error) {
     console.error("❌ Error creating order:", error);
