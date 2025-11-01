@@ -3,10 +3,8 @@ import jwt from "jsonwebtoken";
 import userModel from "../../../DB/models/user.model.js";
 import { handleError } from "../../middleware/handleError.js";
 import storeModel from "../../../DB/models/store.model.js";
-import passport, { initGoogleAuth } from "./googleAuth.js"; // Import the init function
-
-// Initialize Google OAuth strategy
-initGoogleAuth();
+import passport from "passport";
+import '../Auth/googleAuth.js'; // Initialize Google OAuth strategy
 
 // Generate unique ID
 const generateId = () => {
