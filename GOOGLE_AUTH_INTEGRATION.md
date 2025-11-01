@@ -2,9 +2,9 @@
 
 ## Setup Instructions
 
-1. The Google OAuth credentials need to be added to the `.env` file:
-   - GOOGLE_CLIENT_ID: Your Google OAuth Client ID
-   - GOOGLE_CLIENT_SECRET: Your Google OAuth Client Secret
+1. The Google OAuth credentials have been added to the `.env` file:
+   - GOOGLE_CLIENT_ID: 932906548265-dokggk5aqkdednbvp1ttbq3ad5mt94f2.apps.googleusercontent.com
+   - GOOGLE_CLIENT_SECRET: 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
    - GOOGLE_CALLBACK_URL: http://localhost:4000/api/auth/google/callback
 
 ## How It Works

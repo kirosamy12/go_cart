@@ -14,9 +14,9 @@ const generateId = () => {
 
 // Configure Google OAuth strategy
 passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.GOOGLE_CALLBACK_URL
+  clientID: "932906548265-dokggk5aqkdednbvp1ttbq3ad5mt94f2.apps.googleusercontent.com",
+  clientSecret: "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",
+  callbackURL: "https://go-cart-1bwm.vercel.app/api/auth/google/callback"
 },
 async (accessToken, refreshToken, profile, done) => {
   try {
