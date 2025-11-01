@@ -1,22 +1,58 @@
 import express from "express";
-import { register,login ,getProfile} from "./auth.controler.js";
-const authRouter= express.Router();
+import { register, login, getProfile } from "./auth.controler.js";
+import passport from "passport";
+import jwt from "jsonwebtoken";
+import userModel from "../../../DB/models/user.model.js";
+import storeModel from "../../../DB/models/store.model.js";
 
+const authRouter = express.Router();
 
-// authRouter.get("/getUserProfile",protectRoutes,getUserProfile)
-authRouter.post("/register",register)
- authRouter.post("/login",login)
-// authRouter.get("/verify-email/:token", verifyEmail)
-// authRouter.post("/forgotPassword",forgotPassword)
-// authRouter.post("/resetPassword",resetPassword)
-
+// Traditional auth routes
+authRouter.post("/register", register);
+authRouter.post("/login", login);
 authRouter.get("/profile", getProfile);
 
+// Google OAuth routes
+authRouter.get("/google", 
+  passport.authenticate("google", { scope: ["profile", "email"] })
+);
 
+authRouter.get("/google/callback",
+  passport.authenticate("google", { failureRedirect: "/api/auth/login" }),
+  async (req, res) => {
+    try {
+      // Generate JWT token for the authenticated user
+      const tokenPayload = {
+        userId: req.user.id,
+        email: req.user.email,
+        role: req.user.role
+      };
+      
+      // If user is a store owner, add storeId to token
+      if (req.user.role === 'store') {
+        const store = await storeModel.findOne({ userId: req.user.id });
+        if (store) {
+          tokenPayload.storeId = store.id;
+        }
+      }
+      
+      const token = jwt.sign(
+        tokenPayload,
+        process.env.JWT_SECRET || "kiro",
+        { expiresIn: "24h" }
+      );
+      
+      // Redirect to frontend with token (you can customize this URL)
+      res.redirect(`https://go-cart-1bwm.vercel.app/auth/success?token=${token}`);
+    } catch (error) {
+      console.error("Google callback error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Internal Server Error",
+        message: "Something went wrong during Google authentication"
+      });
+    }
+  }
+);
 
-
-
-
-
-
-export default authRouter; 
+export default authRouter;

@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 const userSchema = new mongoose.Schema({
   id: {
@@ -6,14 +5,18 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true // Allows null values while maintaining uniqueness
+  },
   name: {
     type: String,
     required: true,
     trim: true
   },
   password: { 
-    type: String, 
-    required: true
+    type: String
   }, 
   email: {
     type: String,

@@ -23,8 +23,8 @@ export const allRoutes=(app)=>{
     app.use("/api/analytics", analyticsRouter)
   //  app.use("/api/v1",bannerRouter)
 
-    // app.all('*', (req, res, next) => {
-    //     next(new AppError(`Cannot find ${req.originalUrl} on this server!`, 404));
+    // app.all('*', (req, res) => {
+    //     res.status(404).send('Route not found!');
     //   });
 
       app.use(globalErrorHandler);

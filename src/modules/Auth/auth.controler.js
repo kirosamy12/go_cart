@@ -3,6 +3,8 @@ import jwt from "jsonwebtoken";
 import userModel from "../../../DB/models/user.model.js";
 import { handleError } from "../../middleware/handleError.js";
 import storeModel from "../../../DB/models/store.model.js";
+import passport from "passport";
+import '../Auth/googleAuth.js'; // Initialize Google OAuth strategy
 
 // Generate unique ID
 const generateId = () => {
@@ -101,14 +103,16 @@ export const login = async (req, res) => {
     });
   }
 
-  // Verify password
-  const isValidPassword = await bcrypt.compare(password, user.password);
-  if (!isValidPassword) {
-    return res.status(401).json({
-      success: false,
-      error: "Unauthorized",
-      message: "Invalid credentials",
-    });
+  // Verify password (skip for Google auth users)
+  if (user.password) {
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+        message: "Invalid credentials",
+      });
+    }
   }
 
   // Generate JWT token
@@ -207,10 +211,6 @@ export const getProfile = handleError(async (req, res) => {
   }
 });
 
-
-
-
-
 export const protectRoutes = handleError(async (req, res, next) => {
   let { token } = req.headers;
 
@@ -223,7 +223,7 @@ export const protectRoutes = handleError(async (req, res, next) => {
 
   let decoded;
   try {
-    decoded = await jwt.verify(token, "kiro");
+    decoded = await jwt.verify(token, process.env.JWT_SECRET || "kiro");
   } catch (err) {
     return res.status(401).json({
       status: "fail",
@@ -279,8 +279,6 @@ export const allowTo = (...roles) => {
     next();
   });
 };
-
-
 
 export const isStoreOwner = async (req, res, next) => {
   const userId = req.user._id.toString();
