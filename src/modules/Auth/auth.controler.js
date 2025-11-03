@@ -3,10 +3,6 @@ import jwt from "jsonwebtoken";
 import userModel from "../../../DB/models/user.model.js";
 import { handleError } from "../../middleware/handleError.js";
 import storeModel from "../../../DB/models/store.model.js";
-import passport, { initGoogleAuth } from "./googleAuth.js"; // Import the init function
-
-// Initialize Google OAuth strategy
-initGoogleAuth();
 
 // Generate unique ID
 const generateId = () => {
@@ -105,16 +101,14 @@ export const login = async (req, res) => {
     });
   }
 
-  // Verify password (skip for Google auth users)
-  if (user.password) {
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({
-        success: false,
-        error: "Unauthorized",
-        message: "Invalid credentials",
-      });
-    }
+  // Verify password
+  const isValidPassword = await bcrypt.compare(password, user.password);
+  if (!isValidPassword) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized",
+      message: "Invalid credentials",
+    });
   }
 
   // Generate JWT token
@@ -164,13 +158,11 @@ export const getProfile = handleError(async (req, res) => {
       });
     }
 
-    // Handle "Bearer <token>" or just "<token>"
-    let token;
-    if (authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    } else {
-      token = authHeader;
-    }
+   if (!authHeader) {
+  return res.status(401).json({ message: "No token provided" });
+}
+
+const token = authHeader;
 
     let decoded;
     try {
@@ -213,6 +205,10 @@ export const getProfile = handleError(async (req, res) => {
   }
 });
 
+
+
+
+
 export const protectRoutes = handleError(async (req, res, next) => {
   let { token } = req.headers;
 
@@ -225,7 +221,7 @@ export const protectRoutes = handleError(async (req, res, next) => {
 
   let decoded;
   try {
-    decoded = await jwt.verify(token, process.env.JWT_SECRET || "kiro");
+    decoded = await jwt.verify(token, "kiro");
   } catch (err) {
     return res.status(401).json({
       status: "fail",
@@ -281,6 +277,8 @@ export const allowTo = (...roles) => {
     next();
   });
 };
+
+
 
 export const isStoreOwner = async (req, res, next) => {
   const userId = req.user._id.toString();
