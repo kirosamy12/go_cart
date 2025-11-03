@@ -5,8 +5,10 @@ import orderModel from "../../../DB/models/orderModel.js";
 import cartModel from "../../../DB/models/cart.model.js";
 import mongoose from "mongoose";
 import userModel from "../../../DB/models/user.model.js";
+import couponModel from "../../../DB/models/coupon.model.js";
 const ObjectId = mongoose.Types.ObjectId;
 
+const toStr = v => (v ? v.toString() : v);
 
 const generateId = () => {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
@@ -675,8 +677,6 @@ export const getOrderTracking = async (req, res) => {
 };
 
 
-const toStr = v => (v ? v.toString() : v);
-
 // ✅ GET MY ORDERS (مع الألوان)
 export const getMyOrders = async (req, res) => {
   try {
@@ -951,8 +951,6 @@ export const getInvoiceById = async (req, res) => {
 };
 
 
-
-
 const calculateTotalRevenue = async (matchFilter = {}) => {
   const result = await orderModel.aggregate([
     { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] }, ...matchFilter } },
@@ -1189,5 +1187,81 @@ export const getAdminDashboard = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Error fetching admin dashboard", error: err.message });
+  }
+};
+
+
+// ✅ GET SUCCESSFUL ORDERS (Delivered and Paid)
+export const getSuccessfulOrders = async (req, res) => {
+  try {
+    const userId = req.user._id.toString();
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Get delivered and paid orders for the user
+    const [orders, total] = await Promise.all([
+      orderModel.find({ 
+        userId: userId, 
+        status: 'delivered', 
+        isPaid: true 
+      })
+        .populate('storeId', 'id name username logo')
+        .populate('addressId', 'street city state country phone')
+        .populate('orderItems.productId', 'id name images price colors sizes')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit, 10)),
+
+      orderModel.countDocuments({ 
+        userId: userId, 
+        status: 'delivered', 
+        isPaid: true 
+      })
+    ]);
+
+    res.json({
+      success: true,
+      orders: orders.map(order => ({
+        id: order.id,
+        total: order.total,
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        isPaid: order.isPaid,
+        createdAt: order.createdAt,
+        deliveredAt: order.updatedAt, // Assuming updatedAt is when it was delivered
+
+        store: order.storeId,
+        address: order.addressId,
+
+        orderItems: order.orderItems.map(item => ({
+          product: {
+            id: item.productId.id,
+            name: item.productId.name,
+            images: item.productId.images,
+            price: item.productId.price,
+            colors: item.productId.colors,
+            sizes: item.productId.sizes
+          },
+          quantity: item.quantity,
+          price: item.price,
+          selectedColor: item.selectedColor,
+          selectedSize: item.selectedSize
+        }))
+      })),
+
+      pagination: {
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get successful orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong while fetching successful orders'
+    });
   }
 };
