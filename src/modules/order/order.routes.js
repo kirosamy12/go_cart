@@ -42,5 +42,5 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  
  router.get("/dashbord/admin", protectRoutes, allowTo("admin"), getAdminDashboard);
  router.get("/dashbord/store", protectRoutes, allowTo("store"), getStoreDashboard);
-
+//كككك
 export default router;
