@@ -30,15 +30,15 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get('/:orderId/tracking',protectRoutes,allowTo("store"), getOrderTracking);
 
 // // Store orders
- router.get('/store/orders',protectRoutes ,allowTo("store"), getStoreOrders);
+ router.get('/store/orders',protectRoutes , getStoreOrders);
  router.put('/:orderId/status', protectRoutes,allowTo('store'), updateOrderStatus);
 
  router.get("/use/order/myOrders", protectRoutes, getMyOrders);
  router.get("/track/:orderId", protectRoutes, trackOrder);
  
  // Invoices
- router.get("/order/invoices", protectRoutes, getInvoices);
- router.get("/order/invoice/:orderId", protectRoutes, getInvoiceById);
+ router.get("/order/invoices", protectRoutes,allowTo("store"), getInvoices);
+ router.get("/order/invoice/:orderId", protectRoutes,allowTo("store"), getInvoiceById);
  
  router.get("/dashbord/admin", protectRoutes, allowTo("admin"), getAdminDashboard);
  router.get("/dashbord/store", protectRoutes, allowTo("store"), getStoreDashboard);
