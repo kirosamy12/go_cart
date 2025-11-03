@@ -156,7 +156,7 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // ✅ أنشئ الأوردر مع كل الـ fields المطلوبة
+    // ✅ أنشئ الأورダー مع كل الـ fields المطلوبة
     const newOrder = await orderModel.create({
       id: Math.random().toString(36).substr(2, 9) + Date.now().toString(36), // ✅ Generate unique ID
       userId, // ✅ ObjectId
@@ -179,7 +179,7 @@ export const createOrder = async (req, res) => {
 
     console.log("✅ Order created successfully:", newOrder._id);
 
-    // ✅ فضي الكارت بعد إنشاء الأوردر
+    // ✅ فضي الكارت بعد إنشاء الأورダー
     cart.items = [];
     await cart.save();
 
@@ -785,7 +785,7 @@ export const trackOrder = async (req, res) => {
 
     const trackingSteps = [
       { status: "pending", label: "Order Placed", completed: true, timestamp: order.createdAt },
-      { status: "processing", label: "Processing", completed: ["processing", "shipped", "delivered"].includes(order.status), timestamp: (["processing","shipped","delivered"].includes(order.status) ? order.updatedAt : null) },
+      { status: "processing", label: "Processing", completed: ["processing","shipped","delivered"].includes(order.status), timestamp: (["processing","shipped","delivered"].includes(order.status) ? order.updatedAt : null) },
       { status: "shipped", label: "Shipped", completed: ["shipped","delivered"].includes(order.status), timestamp: (["shipped","delivered"].includes(order.status) ? order.updatedAt : null) },
       { status: "delivered", label: "Delivered", completed: order.status === "delivered", timestamp: (order.status === "delivered" ? order.updatedAt : null) }
     ];
@@ -842,29 +842,34 @@ export const getInvoices = async (req, res) => {
     const { page = 1, limit = 20 } = req.query;
     const skip = (page - 1) * limit;
 
+    // Get delivered orders for the user (invoices are only for delivered orders)
     const [orders, total] = await Promise.all([
-      orderModel.find({ userId })
+      orderModel.find({ 
+        userId: userId, 
+        status: 'delivered'  // Only delivered orders
+      })
         .sort({ createdAt: -1 })
         .skip(parseInt(skip, 10))
         .limit(parseInt(limit, 10))
         .lean(),
-      orderModel.countDocuments({ userId })
+      orderModel.countDocuments({ 
+        userId: userId, 
+        status: 'delivered' 
+      })
     ]);
 
     const invoices = orders.map(order => {
       const subtotal = order.orderItems.reduce((s, it) => s + (it.price * it.quantity), 0);
-      const taxRate = 0;
-      const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
       const total = order.total;
+      
       return {
         invoiceNumber: `INV-${order.id}`,
         orderId: order.id,
         createdAt: order.createdAt,
-        subtotal,
-        taxRate,
-        taxAmount,
-        total,
-        status: order.status
+        subtotal: subtotal,
+        total: total,
+        status: order.status,
+        username: req.user.name  // Add username to invoice
       };
     });
 
@@ -872,8 +877,8 @@ export const getInvoices = async (req, res) => {
       success: true,
       page: parseInt(page, 10),
       limit: parseInt(limit, 10),
-      total,
-      invoices
+      total: total,
+      invoices: invoices
     });
   } catch (error) {
     console.error("Get invoices error:", error);
@@ -890,6 +895,14 @@ export const getInvoiceById = async (req, res) => {
 
     const order = await orderModel.findOne({ id: orderId }).lean();
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+
+    // Only allow access to invoices for delivered orders
+    if (order.status !== 'delivered') {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invoice is only available for delivered orders" 
+      });
+    }
 
     if (toStr(order.userId) !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: "You do not have permission to view this invoice" });
@@ -917,8 +930,6 @@ export const getInvoiceById = async (req, res) => {
     });
 
     const subtotal = items.reduce((s, it) => s + it.lineTotal, 0);
-    const taxRate = 0;
-    const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
     const total = order.total;
 
     const invoice = {
@@ -931,15 +942,16 @@ export const getInvoiceById = async (req, res) => {
         address: store ? store.address : null
       },
       buyer: {
-        id: order.userId
+        id: order.userId,
+        name: req.user.name,  // Add username to invoice
+        email: req.user.email
       },
       billingAddress: address || null,
       items,
       subtotal,
-      taxRate,
-      taxAmount,
       total,
-      status: order.status
+      status: order.status,
+      username: req.user.name  // Add username to invoice
     };
 
     res.json({ success: true, invoice });
