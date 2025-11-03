@@ -14,6 +14,7 @@ getMyOrders,
   getInvoices,
   getInvoiceById,
    getOrderTracking,
+   getSuccessfulOrders
 } from '../order/order.controler.js';
 import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js';
 
