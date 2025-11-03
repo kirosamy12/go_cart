@@ -900,7 +900,7 @@ export const getInvoiceById = async (req, res) => {
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
     // Only allow access to invoices for delivered and paid orders
-    if (order.status !== 'delivered' || !order.isPaid) {
+    if (order.status !== 'DELIVERED' || !order.isPaid) {
       return res.status(400).json({ 
         success: false, 
         message: "Invoice is only available for delivered and paid orders" 
