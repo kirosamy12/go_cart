@@ -115,7 +115,7 @@ export const createOrder = async (req, res) => {
       })
     );
 
-    // ✅ تحقق إن كل المنتجات من نفس الـ store
+    // ✅ تحقّق إن كل المنتجات من نفس الـ store
     const storeIds = [...new Set(orderItems.map(item => item.storeId.toString()))];
     
     if (storeIds.length > 1) {
@@ -842,11 +842,12 @@ export const getInvoices = async (req, res) => {
     const { page = 1, limit = 20 } = req.query;
     const skip = (page - 1) * limit;
 
-    // Get delivered orders for the user (invoices are only for delivered orders)
+    // Get delivered and paid orders for the user (invoices are only for delivered and paid orders)
     const [orders, total] = await Promise.all([
       orderModel.find({ 
         userId: userId, 
-        status: 'delivered'  // Only delivered orders
+        status: 'DELIVERED',  // Only delivered orders
+        isPaid: true          // Only paid orders
       })
         .sort({ createdAt: -1 })
         .skip(parseInt(skip, 10))
@@ -854,7 +855,8 @@ export const getInvoices = async (req, res) => {
         .lean(),
       orderModel.countDocuments({ 
         userId: userId, 
-        status: 'delivered' 
+        status: 'DELIVERED',
+        isPaid: true
       })
     ]);
 
@@ -869,6 +871,7 @@ export const getInvoices = async (req, res) => {
         subtotal: subtotal,
         total: total,
         status: order.status,
+        isPaid: order.isPaid,
         username: req.user.name  // Add username to invoice
       };
     });
@@ -896,11 +899,11 @@ export const getInvoiceById = async (req, res) => {
     const order = await orderModel.findOne({ id: orderId }).lean();
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
-    // Only allow access to invoices for delivered orders
-    if (order.status !== 'delivered') {
+    // Only allow access to invoices for delivered and paid orders
+    if (order.status !== 'delivered' || !order.isPaid) {
       return res.status(400).json({ 
         success: false, 
-        message: "Invoice is only available for delivered orders" 
+        message: "Invoice is only available for delivered and paid orders" 
       });
     }
 
@@ -951,6 +954,7 @@ export const getInvoiceById = async (req, res) => {
       subtotal,
       total,
       status: order.status,
+      isPaid: order.isPaid,
       username: req.user.name  // Add username to invoice
     };
 
