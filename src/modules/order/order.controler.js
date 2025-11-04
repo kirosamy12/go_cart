@@ -842,6 +842,9 @@ export const getInvoices = async (req, res) => {
     const { page = 1, limit = 20 } = req.query;
     const skip = (page - 1) * limit;
 
+    // Debug logging
+    console.log("Fetching invoices for user:", userId);
+
     // Get delivered and paid orders for the user (invoices are only for delivered and paid orders)
     const [orders, total] = await Promise.all([
       orderModel.find({ 
@@ -859,6 +862,9 @@ export const getInvoices = async (req, res) => {
         isPaid: true
       })
     ]);
+
+    // Debug logging
+    console.log("Found orders:", orders.map(o => ({ id: o.id, status: o.status, isPaid: o.isPaid })));
 
     const invoices = orders.map(order => {
       const subtotal = order.orderItems.reduce((s, it) => s + (it.price * it.quantity), 0);
@@ -899,16 +905,38 @@ export const getInvoiceById = async (req, res) => {
     const order = await orderModel.findOne({ id: orderId }).lean();
     if (!order) return res.status(404).json({ success: false, message: "Order not found" });
 
+    // Debug logging to see what's happening
+    console.log("Order debug info:", {
+      id: order.id,
+      status: order.status,
+      isPaid: order.isPaid,
+      orderUserId: toStr(order.userId),
+      requestedUserId: req.user._id.toString(),
+      userIdsMatch: toStr(order.userId) === req.user._id.toString()
+    });
+
     // Only allow access to invoices for delivered and paid orders
     if (order.status !== 'DELIVERED' || !order.isPaid) {
       return res.status(400).json({ 
         success: false, 
-        message: "Invoice is only available for delivered and paid orders" 
+        message: "Invoice is only available for delivered and paid orders",
+        debug: {
+          status: order.status,
+          isPaid: order.isPaid,
+          requiredStatus: 'DELIVERED'
+        }
       });
     }
 
     if (toStr(order.userId) !== req.user._id.toString()) {
-      return res.status(403).json({ success: false, message: "You do not have permission to view this invoice" });
+      return res.status(403).json({ 
+        success: false, 
+        message: "You do not have permission to view this invoice",
+        debug: {
+          orderUserId: toStr(order.userId),
+          requestedUserId: req.user._id.toString()
+        }
+      });
     }
 
     const store = order.storeId ? await storeModel.findById(order.storeId).lean() : null;
