@@ -15,7 +15,11 @@ getMyOrders,
   getInvoiceById,
    getOrderTracking,
    getSuccessfulOrders,
-   getAllOrdersForAdmin
+   getAllOrdersForAdmin,
+   getAllSuccessfulOrders,
+   getSuccessfulOrderById,
+   getStoreSuccessfulOrders,
+   getStoreSuccessfulOrderById
 } from '../order/order.controler.js';
 import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js';
 
@@ -33,6 +37,8 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
 
 // // Store orders
  router.get('/store/orders',protectRoutes ,allowTo("store"), getStoreOrders);
+ router.get('/store/orders/successful',protectRoutes ,allowTo("store"), getStoreSuccessfulOrders);
+ router.get('/store/orders/successful/:orderId',protectRoutes ,allowTo("store"), getStoreSuccessfulOrderById);
  router.put('/:orderId/status', protectRoutes,allowTo('store'), updateOrderStatus);
 
  router.get("/use/order/myOrders", protectRoutes, getMyOrders);
@@ -42,11 +48,17 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get("/kiro/order/invoices", protectRoutes, getInvoices);
  router.get("/order/invoice/:orderId", protectRoutes, getInvoiceById);
  
- // Successful delivered orders
+ // Successful delivered orders for user
  router.get("/orders/successful", protectRoutes, getSuccessfulOrders);
  
  // All orders for admin
  router.get("/orders/all", protectRoutes, allowTo("admin"), getAllOrdersForAdmin);
+ 
+ // All successful orders for admin
+ router.get("/orders/successful/all", protectRoutes, allowTo("admin"), getAllSuccessfulOrders);
+ 
+ // Get specific successful order by ID for admin
+ router.get("/orders/successful/:orderId", protectRoutes, allowTo("admin"), getSuccessfulOrderById);
  
  router.get("/dashbord/admin", protectRoutes, allowTo("admin"), getAdminDashboard);
  router.get("/dashbord/store", protectRoutes, allowTo("store"), getStoreDashboard);
