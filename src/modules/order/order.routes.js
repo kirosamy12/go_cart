@@ -14,7 +14,8 @@ getMyOrders,
   getInvoices,
   getInvoiceById,
    getOrderTracking,
-   getSuccessfulOrders
+   getSuccessfulOrders,
+   getAllOrdersForAdmin
 } from '../order/order.controler.js';
 import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js';
 
@@ -43,6 +44,9 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  
  // Successful delivered orders
  router.get("/orders/successful", protectRoutes, getSuccessfulOrders);
+ 
+ // All orders for admin
+ router.get("/orders/all", protectRoutes, allowTo("admin"), getAllOrdersForAdmin);
  
  router.get("/dashbord/admin", protectRoutes, allowTo("admin"), getAdminDashboard);
  router.get("/dashbord/store", protectRoutes, allowTo("store"), getStoreDashboard);

@@ -1234,6 +1234,71 @@ export const getAdminDashboard = async (req, res) => {
   }
 };
 
+// ✅ GET ALL ORDERS FOR ADMIN
+export const getAllOrdersForAdmin = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, status } = req.query;
+    const skip = (page - 1) * limit;
+    
+    // Build filter object
+    const filter = {};
+    if (status) {
+      filter.status = status;
+    }
+
+    // Get all orders with optional status filter
+    const [orders, total] = await Promise.all([
+      orderModel.find(filter)
+        .populate('userId', 'id name email')
+        .populate('storeId', 'id name username')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit, 10))
+        .lean(),
+
+      orderModel.countDocuments(filter)
+    ]);
+
+    res.json({
+      success: true,
+      orders: orders.map(order => ({
+        id: order.id,
+        total: order.total,
+        status: order.status,
+        isPaid: order.isPaid,
+        paymentMethod: order.paymentMethod,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        
+        customer: {
+          id: order.userId?.id,
+          name: order.userId?.name,
+          email: order.userId?.email
+        },
+        
+        store: {
+          id: order.storeId?.id,
+          name: order.storeId?.name,
+          username: order.storeId?.username
+        }
+      })),
+
+      pagination: {
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get all orders for admin error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong while fetching orders'
+    });
+  }
+};
 
 // ✅ GET SUCCESSFUL ORDERS (Delivered and Paid)
 export const getSuccessfulOrders = async (req, res) => {
@@ -1246,7 +1311,7 @@ export const getSuccessfulOrders = async (req, res) => {
     const [orders, total] = await Promise.all([
       orderModel.find({ 
         userId: userId, 
-        status: 'delivered', 
+        status: 'DELIVERED', 
         isPaid: true 
       })
         .populate('storeId', 'id name username logo')
@@ -1258,7 +1323,7 @@ export const getSuccessfulOrders = async (req, res) => {
 
       orderModel.countDocuments({ 
         userId: userId, 
-        status: 'delivered', 
+        status: 'DELIVERED', 
         isPaid: true 
       })
     ]);
