@@ -7,7 +7,7 @@ import {
     addToCart,
     removeItemFromCart
 
-} from '../cart/cart.controler.js';
+} from './cart.controler.js';
 import { protectRoutes } from '../Auth/auth.controler.js';
 
 const router = express.Router(); 
