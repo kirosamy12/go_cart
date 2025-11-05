@@ -6,6 +6,7 @@ import cartModel from "../../../DB/models/cart.model.js";
 import mongoose from "mongoose";
 import userModel from "../../../DB/models/user.model.js";
 import couponModel from "../../../DB/models/coupon.model.js";
+import sendEmail from "../../utils/sendEmail.js";
 const ObjectId = mongoose.Types.ObjectId;
 
 const toStr = v => (v ? v.toString() : v);
