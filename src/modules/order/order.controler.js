@@ -183,6 +183,78 @@ export const createOrder = async (req, res) => {
     cart.items = [];
     await cart.save();
 
+    // ✅ Send email notifications to customer, store owner, and admin
+    try {
+      // Get customer, store owner, and admin email addresses
+      const customer = await userModel.findById(userId);
+      const store = await storeModel.findById(storeId);
+      const adminEmail = process.env.ADMIN_EMAIL || "kirosamy2344@gmail.com";
+
+      // Email to customer
+      if (customer && customer.email) {
+        await sendEmail({
+          to: customer.email,
+          subject: "Order Confirmation",
+          html: `
+            <h2>Order Confirmation</h2>
+            <p>Dear ${customer.name},</p>
+            <p>Your order #${newOrder.id} has been successfully placed.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${newOrder.id}</li>
+              <li>Total Amount: $${newOrder.total}</li>
+              <li>Payment Method: ${newOrder.paymentMethod}</li>
+              <li>Status: ${newOrder.status}</li>
+            </ul>
+            <p>Thank you for your purchase!</p>
+          `
+        });
+      }
+
+      // Email to store owner
+      if (store && store.email) {
+        await sendEmail({
+          to: store.email,
+          subject: "New Order Received",
+          html: `
+            <h2>New Order Received</h2>
+            <p>Hello ${store.name},</p>
+            <p>You have received a new order #${newOrder.id}.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${newOrder.id}</li>
+              <li>Customer: ${customer?.name || 'N/A'}</li>
+              <li>Total Amount: $${newOrder.total}</li>
+              <li>Payment Method: ${newOrder.paymentMethod}</li>
+            </ul>
+            <p>Please process this order as soon as possible.</p>
+          `
+        });
+      }
+
+      // Email to admin
+      await sendEmail({
+        to: adminEmail,
+        subject: "New Order Placed",
+        html: `
+          <h2>New Order Placed</h2>
+          <p>A new order #${newOrder.id} has been placed.</p>
+          <p><strong>Order Details:</strong></p>
+          <ul>
+            <li>Order ID: ${newOrder.id}</li>
+            <li>Customer: ${customer?.name || 'N/A'} (${customer?.email || 'N/A'})</li>
+            <li>Store: ${store?.name || 'N/A'} (${store?.email || 'N/A'})</li>
+            <li>Total Amount: $${newOrder.total}</li>
+            <li>Payment Method: ${newOrder.paymentMethod}</li>
+            <li>Status: ${newOrder.status}</li>
+          </ul>
+        `
+      });
+    } catch (emailError) {
+      console.error("❌ Error sending email notifications:", emailError);
+      // Don't fail the order creation if email sending fails
+    }
+
     return res.status(201).json({
       success: true,
       message: "Order created successfully",
@@ -1162,158 +1234,6 @@ export const getStoreDashboard = async (req, res) => {
   }
 };
 
-// ✅ GET STORE SUCCESSFUL ORDERS (Delivered and Paid only)
-export const getStoreSuccessfulOrders = async (req, res) => {
-  try {
-    const { page = 1, limit = 10 } = req.query;
-    const userId = req.user.id;
-    
-    const store = await storeModel.findOne({ userId });
-    
-    if (!store) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have a store'
-      });
-    }
-
-    const storeId = store._id.toString();
-    const skip = (page - 1) * limit;
-
-    const query = { 
-      storeId: storeId.toString(),
-      status: 'DELIVERED',
-      isPaid: true
-    };
-
-    const [orders, total] = await Promise.all([
-      orderModel.find(query)
-        .populate('userId', 'id name email phone')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit, 10))
-        .lean(),
-
-      orderModel.countDocuments(query)
-    ]);
-
-    res.json({
-      success: true,
-      orders: orders.map(order => ({
-        id: order.id,
-        total: order.total,
-        createdAt: order.createdAt,
-        customer: {
-          id: order.userId?.id,
-          name: order.userId?.name,
-          email: order.userId?.email
-        }
-      })),
-
-      pagination: {
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Get store successful orders error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Something went wrong while fetching store successful orders'
-    });
-  }
-};
-
-// ✅ GET STORE SUCCESSFUL ORDER BY ID
-export const getStoreSuccessfulOrderById = async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    if (!orderId) return res.status(400).json({ success: false, message: "Order ID is required" });
-
-    const userId = req.user.id;
-    const store = await storeModel.findOne({ userId });
-    
-    if (!store) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have a store'
-      });
-    }
-
-    const storeId = store._id.toString();
-
-    // Get delivered and paid order by ID that belongs to this store
-    const order = await orderModel.findOne({ 
-      id: orderId, 
-      storeId: storeId,
-      status: 'DELIVERED', 
-      isPaid: true 
-    })
-      .populate('userId', 'id name email phone')
-      .populate('addressId', 'street city state country phone')
-      .populate('orderItems.productId', 'id name images price colors sizes')
-      .lean();
-
-    if (!order) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Successful order not found or does not belong to your store" 
-      });
-    }
-
-    // Format the response with complete order details
-    const formattedOrder = {
-      id: order.id,
-      total: order.total,
-      status: order.status,
-      paymentMethod: order.paymentMethod,
-      isPaid: order.isPaid,
-      createdAt: order.createdAt,
-      deliveredAt: order.updatedAt,
-
-      customer: {
-        id: order.userId?.id,
-        name: order.userId?.name,
-        email: order.userId?.email,
-        phone: order.userId?.phone
-      },
-
-      address: order.addressId,
-
-      orderItems: order.orderItems.map(item => ({
-        product: {
-          id: item.productId.id,
-          name: item.productId.name,
-          images: item.productId.images,
-          price: item.productId.price,
-          colors: item.productId.colors,
-          sizes: item.productId.sizes
-        },
-        quantity: item.quantity,
-        price: item.price,
-        selectedColor: item.selectedColor,
-        selectedSize: item.selectedSize,
-        lineTotal: item.price * item.quantity
-      }))
-    };
-
-    res.json({
-      success: true,
-      order: formattedOrder
-    });
-
-  } catch (error) {
-    console.error('❌ Get store successful order by id error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Something went wrong while fetching order details'
-    });
-  }
-};
-
 // ===================================================
 // 🧭 ADMIN DASHBOARD
 // ===================================================
@@ -1527,6 +1447,85 @@ export const getSuccessfulOrders = async (req, res) => {
   }
 };
 
+// ✅ GET ALL SUCCESSFUL ORDERS (Delivered and Paid) - For Admin
+export const getAllSuccessfulOrders = async (req, res) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Get all delivered and paid orders
+    const [orders, total] = await Promise.all([
+      orderModel.find({ 
+        status: 'DELIVERED', 
+        isPaid: true 
+      })
+        .populate('userId', 'id name email')
+        .populate('storeId', 'id name username logo')
+        .populate('addressId', 'street city state country phone')
+        .populate('orderItems.productId', 'id name images price colors sizes')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit, 10)),
+
+      orderModel.countDocuments({ 
+        status: 'DELIVERED', 
+        isPaid: true 
+      })
+    ]);
+
+    res.json({
+      success: true,
+      orders: orders.map(order => ({
+        id: order.id,
+        total: order.total,
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        isPaid: order.isPaid,
+        createdAt: order.createdAt,
+        deliveredAt: order.updatedAt, // Assuming updatedAt is when it was delivered
+
+        customer: {
+          id: order.userId?.id,
+          name: order.userId?.name,
+          email: order.userId?.email
+        },
+
+        store: order.storeId,
+        address: order.addressId,
+
+        orderItems: order.orderItems.map(item => ({
+          product: {
+            id: item.productId.id,
+            name: item.productId.name,
+            images: item.productId.images,
+            price: item.productId.price,
+            colors: item.productId.colors,
+            sizes: item.productId.sizes
+          },
+          quantity: item.quantity,
+          price: item.price,
+          selectedColor: item.selectedColor,
+          selectedSize: item.selectedSize
+        }))
+      })),
+
+      pagination: {
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get all successful orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong while fetching successful orders'
+    });
+  }
+};
+
 // ✅ GET SUCCESSFUL ORDER BY ID
 export const getSuccessfulOrderById = async (req, res) => {
   try {
@@ -1603,30 +1602,40 @@ export const getSuccessfulOrderById = async (req, res) => {
   }
 };
 
-// ✅ GET ALL SUCCESSFUL ORDERS (Delivered and Paid) - For Admin
-export const getAllSuccessfulOrders = async (req, res) => {
+
+// ✅ GET STORE SUCCESSFUL ORDERS (Delivered and Paid only)
+export const getStoreSuccessfulOrders = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
+    const userId = req.user.id;
+    
+    const store = await storeModel.findOne({ userId });
+    
+    if (!store) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have a store'
+      });
+    }
+
+    const storeId = store._id.toString();
     const skip = (page - 1) * limit;
 
-    // Get all delivered and paid orders
+    const query = { 
+      storeId: storeId.toString(),
+      status: 'DELIVERED',
+      isPaid: true
+    };
+
     const [orders, total] = await Promise.all([
-      orderModel.find({ 
-        status: 'DELIVERED', 
-        isPaid: true 
-      })
-        .populate('userId', 'id name email')
-        .populate('storeId', 'id name username logo')
-        .populate('addressId', 'street city state country phone')
-        .populate('orderItems.productId', 'id name images price colors sizes')
+      orderModel.find(query)
+        .populate('userId', 'id name email phone')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit, 10)),
+        .limit(parseInt(limit, 10))
+        .lean(),
 
-      orderModel.countDocuments({ 
-        status: 'DELIVERED', 
-        isPaid: true 
-      })
+      orderModel.countDocuments(query)
     ]);
 
     res.json({
@@ -1634,35 +1643,12 @@ export const getAllSuccessfulOrders = async (req, res) => {
       orders: orders.map(order => ({
         id: order.id,
         total: order.total,
-        status: order.status,
-        paymentMethod: order.paymentMethod,
-        isPaid: order.isPaid,
         createdAt: order.createdAt,
-        deliveredAt: order.updatedAt, // Assuming updatedAt is when it was delivered
-
         customer: {
           id: order.userId?.id,
           name: order.userId?.name,
           email: order.userId?.email
-        },
-
-        store: order.storeId,
-        address: order.addressId,
-
-        orderItems: order.orderItems.map(item => ({
-          product: {
-            id: item.productId.id,
-            name: item.productId.name,
-            images: item.productId.images,
-            price: item.productId.price,
-            colors: item.productId.colors,
-            sizes: item.productId.sizes
-          },
-          quantity: item.quantity,
-          price: item.price,
-          selectedColor: item.selectedColor,
-          selectedSize: item.selectedSize
-        }))
+        }
       })),
 
       pagination: {
@@ -1674,10 +1660,98 @@ export const getAllSuccessfulOrders = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Get all successful orders error:', error);
+    console.error('❌ Get store successful orders error:', error);
     res.status(500).json({
       success: false,
-      message: 'Something went wrong while fetching successful orders'
+      message: 'Something went wrong while fetching store successful orders'
+    });
+  }
+};
+
+
+// ✅ GET STORE SUCCESSFUL ORDER BY ID
+export const getStoreSuccessfulOrderById = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ success: false, message: "Order ID is required" });
+
+    const userId = req.user.id;
+    const store = await storeModel.findOne({ userId });
+    
+    if (!store) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have a store'
+      });
+    }
+
+    const storeId = store._id.toString();
+
+    // Get delivered and paid order by ID that belongs to this store
+    const order = await orderModel.findOne({ 
+      id: orderId, 
+      storeId: storeId,
+      status: 'DELIVERED', 
+      isPaid: true 
+    })
+      .populate('userId', 'id name email phone')
+      .populate('addressId', 'street city state country phone')
+      .populate('orderItems.productId', 'id name images price colors sizes')
+      .lean();
+
+    if (!order) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Successful order not found or does not belong to your store" 
+      });
+    }
+
+    // Format the response with complete order details
+    const formattedOrder = {
+      id: order.id,
+      total: order.total,
+      status: order.status,
+      paymentMethod: order.paymentMethod,
+      isPaid: order.isPaid,
+      createdAt: order.createdAt,
+      deliveredAt: order.updatedAt,
+
+      customer: {
+        id: order.userId?.id,
+        name: order.userId?.name,
+        email: order.userId?.email,
+        phone: order.userId?.phone
+      },
+
+      address: order.addressId,
+
+      orderItems: order.orderItems.map(item => ({
+        product: {
+          id: item.productId.id,
+          name: item.productId.name,
+          images: item.productId.images,
+          price: item.productId.price,
+          colors: item.productId.colors,
+          sizes: item.productId.sizes
+        },
+        quantity: item.quantity,
+        price: item.price,
+        selectedColor: item.selectedColor,
+        selectedSize: item.selectedSize,
+        lineTotal: item.price * item.quantity
+      }))
+    };
+
+    res.json({
+      success: true,
+      order: formattedOrder
+    });
+
+  } catch (error) {
+    console.error('❌ Get store successful order by id error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong while fetching order details'
     });
   }
 };
