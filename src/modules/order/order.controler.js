@@ -184,6 +184,78 @@ export const createOrder = async (req, res) => {
     cart.items = [];
     await cart.save();
 
+    // ✅ Send email notifications to customer, store owner, and admin
+    try {
+      // Get customer, store owner, and admin email addresses
+      const customer = await userModel.findById(userId);
+      const store = await storeModel.findById(storeId);
+      const adminEmail = process.env.ADMIN_EMAIL || "kirosamy2344@gmail.com";
+
+      // Email to customer
+      if (customer && customer.email) {
+        await sendEmail({
+          to: customer.email,
+          subject: "Order Confirmation",
+          html: `
+            <h2>Order Confirmation</h2>
+            <p>Dear ${customer.name},</p>
+            <p>Your order #${newOrder.id} has been successfully placed.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${newOrder.id}</li>
+              <li>Total Amount: $${newOrder.total}</li>
+              <li>Payment Method: ${newOrder.paymentMethod}</li>
+              <li>Status: ${newOrder.status}</li>
+            </ul>
+            <p>Thank you for your purchase!</p>
+          `
+        });
+      }
+
+      // Email to store owner
+      if (store && store.email) {
+        await sendEmail({
+          to: store.email,
+          subject: "New Order Received",
+          html: `
+            <h2>New Order Received</h2>
+            <p>Hello ${store.name},</p>
+            <p>You have received a new order #${newOrder.id}.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${newOrder.id}</li>
+              <li>Customer: ${customer?.name || 'N/A'}</li>
+              <li>Total Amount: $${newOrder.total}</li>
+              <li>Payment Method: ${newOrder.paymentMethod}</li>
+            </ul>
+            <p>Please process this order as soon as possible.</p>
+          `
+        });
+      }
+
+      // Email to admin
+      await sendEmail({
+        to: adminEmail,
+        subject: "New Order Placed",
+        html: `
+          <h2>New Order Placed</h2>
+          <p>A new order #${newOrder.id} has been placed.</p>
+          <p><strong>Order Details:</strong></p>
+          <ul>
+            <li>Order ID: ${newOrder.id}</li>
+            <li>Customer: ${customer?.name || 'N/A'} (${customer?.email || 'N/A'})</li>
+            <li>Store: ${store?.name || 'N/A'} (${store?.email || 'N/A'})</li>
+            <li>Total Amount: $${newOrder.total}</li>
+            <li>Payment Method: ${newOrder.paymentMethod}</li>
+            <li>Status: ${newOrder.status}</li>
+          </ul>
+        `
+      });
+    } catch (emailError) {
+      console.error("❌ Error sending email notifications:", emailError);
+      // Don't fail the order creation if email sending fails
+    }
+
     return res.status(201).json({
       success: true,
       message: "Order created successfully",
