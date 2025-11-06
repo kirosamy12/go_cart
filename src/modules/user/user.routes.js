@@ -10,7 +10,6 @@ import {
   forgotPassword,
   resetPassword
 } from "./user.controler.js";
-import { validation } from "../../middleware/validation.js";
 import { protectRoutes } from "../Auth/auth.controler.js";
 
 const router= express.Router();

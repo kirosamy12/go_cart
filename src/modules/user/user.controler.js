@@ -1,6 +1,5 @@
 import slugify from "slugify";
 import { handleError } from "../../middleware/handleError.js";
-import { deleteOne } from "../handlers/apiHander.js";
 import ApiFeatures from "../../utils/apiFeature.js";
 import userModel from "../../../DB/models/user.model.js"
 import { AppError } from "../../utils/appError.js";
@@ -286,4 +285,29 @@ export const resetPassword = handleError(async (req, res, next) => {
   }
 });
 
-export const deleteUserById= deleteOne(userModel)
+// ✅ Delete User By ID
+export const deleteUserById = handleError(async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    const user = await userModel.findByIdAndDelete(id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: "User deleted successfully"
+    });
+  } catch (error) {
+    console.error("Delete user error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while deleting user"
+    });
+  }
+});
