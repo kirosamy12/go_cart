@@ -15,10 +15,10 @@ const router = express.Router();
 router.use(protectRoutes);
 
 // 🟢 Review routes
-router.post('/createReview', createReview);                    // Create review
-router.get('/product/productReviews/:productId', getProductReviews); // Get reviews for a product
-router.put('/updateReview/:reviewId', updateReview);           // Update review
-router.delete('/deleteReview/:reviewId', deleteReview);        // Delete review
-router.get('/my-reviews', getUserReviews);        // Get current user's reviews
+router.post('/createReview',protectRoutes, createReview);                    // Create review
+router.get('/product/productReviews/:productId',protectRoutes, getProductReviews); // Get reviews for a product
+router.put('/updateReview/:reviewId', protectRoutes,updateReview);           // Update review
+router.delete('/deleteReview/:reviewId', protectRoutes,deleteReview);        // Delete review
+router.get('/my-reviews',protectRoutes, getUserReviews);        // Get current user's reviews
 
 export default router;

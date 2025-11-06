@@ -77,7 +77,11 @@ export const createStore = async (req, res) => {
     // ✅ Send email notification to admin about new store request
     try {
       const adminEmail = process.env.ADMIN_EMAIL || "kirosamy2344@gmail.com";
-      const user = await userModel.findById(userId);
+      // Use findOne with the custom id field instead of findById
+      const user = await userModel.findOne({ id: userId });
+      
+      console.log("📧 Attempting to send email to admin:", adminEmail);
+      console.log("📧 User info:", user?.name, user?.email);
       
       await sendEmail({
         to: adminEmail,
@@ -100,9 +104,13 @@ export const createStore = async (req, res) => {
         `
       });
       
-      console.log("📧 Admin notification email sent for new store request");
+      console.log("📧 Admin notification email sent successfully for new store request");
     } catch (emailError) {
       console.error("❌ Error sending admin notification email:", emailError);
+      console.error("❌ Email error details:", {
+        message: emailError.message,
+        stack: emailError.stack
+      });
       // Don't fail the store creation if email sending fails
     }
 
@@ -337,6 +345,40 @@ export const updateStoreStatus = async (req, res) => {
     }
 
     await store.save();
+
+    // ✅ Send email notification to store owner when approved
+    if (action === 'approve') {
+      try {
+        // Get the store owner's user information
+        const storeOwner = await userModel.findOne({ id: store.userId });
+        
+        if (storeOwner && storeOwner.email) {
+          await sendEmail({
+            to: storeOwner.email,
+            subject: "Store Approval - Your Store Has Been Approved!",
+            html: `
+              <h2>Congratulations! Your Store Has Been Approved</h2>
+              <p>Hello ${storeOwner.name},</p>
+              <p>Great news! Your store "${store.name}" has been approved and is now active.</p>
+              <p><strong>Store Details:</strong></p>
+              <ul>
+                <li>Store Name: ${store.name}</li>
+                <li>Username: ${store.username}</li>
+                <li>Status: ${store.status}</li>
+                <li>Approval Date: ${new Date().toLocaleString()}</li>
+              </ul>
+              <p>You can now start adding products and receiving orders through our platform.</p>
+              <p>Thank you for choosing our e-commerce platform!</p>
+            `
+          });
+          
+          console.log(`📧 Approval email sent to store owner: ${storeOwner.email}`);
+        }
+      } catch (emailError) {
+        console.error("❌ Error sending approval email to store owner:", emailError);
+        // Don't fail the approval process if email sending fails
+      }
+    }
 
     return res.json({
       success: true,

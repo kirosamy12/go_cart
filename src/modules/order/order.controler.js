@@ -1,12 +1,13 @@
-import storeModel from"../../../DB/models/store.model.js"
-import addressModel from"../../../DB/models/address.model.js"
-import productModel from"../../../DB/models/products.model.js"
-import orderModel from "../../../DB/models/orderModel.js";
-import cartModel from "../../../DB/models/cart.model.js";
 import mongoose from "mongoose";
 import userModel from "../../../DB/models/user.model.js";
+import storeModel from "../../../DB/models/store.model.js";
+import productModel from "../../../DB/models/products.model.js";
+import orderModel from "../../../DB/models/orderModel.js";
+import cartModel from "../../../DB/models/cart.model.js";
+import addressModel from "../../../DB/models/address.model.js";
 import couponModel from "../../../DB/models/coupon.model.js";
-import sendEmail from "../../../src/utils/sendEmail.js";
+import invoiceModel from "../../../DB/models/invoice.model.js";
+import sendEmail from "../../utils/sendEmail.js";
 const ObjectId = mongoose.Types.ObjectId;
 
 const toStr = v => (v ? v.toString() : v);
@@ -513,6 +514,65 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     await order.save();
+
+    // ✅ Create invoice when order is delivered
+    if (status === 'delivered') {
+      try {
+        // Get complete order with all required data
+        const completeOrder = await orderModel.findOne({ id: orderId })
+          .populate('userId', 'id name email phone')
+          .populate('storeId', 'id name username email')
+          .populate('addressId')
+          .populate('orderItems.productId', 'id name images price colors sizes');
+
+        // Get store information
+        const store = await storeModel.findById(completeOrder.storeId);
+        
+        // Create invoice items from order items
+        const invoiceItems = completeOrder.orderItems.map(item => ({
+          productId: item.productId._id,
+          name: item.productId.name,
+          images: item.productId.images,
+          quantity: item.quantity,
+          unitPrice: item.price,
+          lineTotal: item.price * item.quantity,
+          selectedColor: item.selectedColor,
+          selectedSize: item.selectedSize,
+          availableColors: item.productId.colors,
+          availableSizes: item.productId.sizes
+        }));
+
+        // Create invoice
+        const newInvoice = new invoiceModel({
+          orderId: completeOrder._id,
+          userId: completeOrder.userId._id,
+          storeId: completeOrder.storeId._id,
+          items: invoiceItems,
+          subtotal: completeOrder.total,
+          total: completeOrder.total,
+          billingAddress: completeOrder.addressId,
+          sellerInfo: {
+            name: store.name,
+            email: store.email,
+            username: store.username
+          },
+          buyerInfo: {
+            name: completeOrder.userId.name,
+            email: completeOrder.userId.email
+          },
+          paymentMethod: completeOrder.paymentMethod,
+          orderStatus: completeOrder.status,
+          orderCreatedAt: completeOrder.createdAt,
+          orderDeliveredAt: new Date()
+        });
+
+        await newInvoice.save();
+        console.log(`✅ Invoice created for order ${orderId}`);
+      } catch (invoiceError) {
+        console.error("❌ Error creating invoice:", invoiceError);
+        // Don't fail the order update if invoice creation fails
+      }
+    }
 
     // ✅ Send email notifications to customer and admin when order status changes
     try {
