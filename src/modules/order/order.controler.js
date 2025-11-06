@@ -1,21 +1,3 @@
-import storeModel from"../../../DB/models/store.model.js"
-import addressModel from"../../../DB/models/address.model.js"
-import productModel from"../../../DB/models/products.model.js"
-import orderModel from "../../../DB/models/orderModel.js";
-import cartModel from "../../../DB/models/cart.model.js";
-import mongoose from "mongoose";
-import userModel from "../../../DB/models/user.model.js";
-import couponModel from "../../../DB/models/coupon.model.js";
-import sendEmail from "../../../src/utils/sendEmail.js";
-const ObjectId = mongoose.Types.ObjectId;
-
-const toStr = v => (v ? v.toString() : v);
-
-const generateId = () => {
-  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
-};
-
-
 export const createOrder = async (req, res) => {
   try {
     const { addressId, paymentMethod, couponCode } = req.body;
