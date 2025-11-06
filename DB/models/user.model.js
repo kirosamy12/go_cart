@@ -37,6 +37,19 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['user', 'admin', 'store'], // Fixed typo: 'stote' -> 'store'
     default: 'user'
+  },
+  phone: {
+    type: String,
+    default: ''
+  },
+  passwordResetOtp: {
+    type: String
+  },
+  passwordResetExpires: {
+    type: Date
+  },
+  changePasswordAt: {
+    type: Date
   }
 }, {
   timestamps: true

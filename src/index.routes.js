@@ -7,13 +7,15 @@ import productRouter from "./modules/products/products.route.js";
 import authRouter from "./modules/store/store.route.js";
 import address from "./modules/address/address.route.js"
 import analyticsRouter from "./modules/analytics/analytics.routes.js";
+import reviewRouter from "./modules/review/review.routes.js";
+import userRouter from "./modules/user/user.routes.js";
 
 export const allRoutes=(app)=>{
     app.use("/api",categoryRouter)
    // app.use("/api/v1",subCategoryRouter)
    app.use("/api",authRouter)
     app.use("/api",productRouter)
-  //  app.use("/api",userRouter)
+    app.use("/api",userRouter)
     app.use("/api/auth",auth)
  //   app.use("/api/v1",wishListRouter)
  //   app.use("/api/v1",couponRouter)
@@ -21,6 +23,7 @@ export const allRoutes=(app)=>{
     app.use("/api",router)
     app.use("/api",address)
     app.use("/api/analytics", analyticsRouter)
+    app.use("/api/reviews", reviewRouter)
   //  app.use("/api/v1",bannerRouter)
 
     // app.all('*', (req, res, next) => {

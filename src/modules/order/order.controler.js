@@ -514,6 +514,60 @@ export const updateOrderStatus = async (req, res) => {
 
     await order.save();
 
+    // ✅ Send email notifications to customer and admin when order status changes
+    try {
+      // Get customer and admin email addresses
+      const customer = await userModel.findById(order.userId);
+      const adminEmail = process.env.ADMIN_EMAIL || "kirosamy2344@gmail.com";
+      
+      // Email to customer
+      if (customer && customer.email) {
+        await sendEmail({
+          to: customer.email,
+          subject: `Order Status Updated - ${orderId}`,
+          html: `
+            <h2>Order Status Update</h2>
+            <p>Dear ${customer.name},</p>
+            <p>The status of your order #${orderId} has been updated.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${orderId}</li>
+              <li>New Status: ${status}</li>
+              <li>Total Amount: $${order.total}</li>
+              <li>Payment Method: ${order.paymentMethod}</li>
+              <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
+            </ul>
+            <p>Thank you for shopping with us!</p>
+          `
+        });
+      }
+
+      // Email to admin
+      await sendEmail({
+        to: adminEmail,
+        subject: `Order Status Updated - ${orderId}`,
+        html: `
+          <h2>Order Status Update</h2>
+          <p>The status of order #${orderId} has been updated.</p>
+          <p><strong>Order Details:</strong></p>
+          <ul>
+            <li>Order ID: ${orderId}</li>
+            <li>Customer: ${customer?.name || 'N/A'} (${customer?.email || 'N/A'})</li>
+            <li>Store: ${store.name} (${store.username})</li>
+            <li>New Status: ${status}</li>
+            <li>Total Amount: $${order.total}</li>
+            <li>Payment Method: ${order.paymentMethod}</li>
+            <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
+          </ul>
+        `
+      });
+      
+      console.log(`📧 Status update emails sent for order ${orderId}`);
+    } catch (emailError) {
+      console.error("❌ Error sending status update emails:", emailError);
+      // Don't fail the status update if email sending fails
+    }
+
     const updatedOrder = await orderModel.findOne({ id: orderId })
       .populate('userId', 'id name email phone')
       .populate('addressId', 'street city state country phone')

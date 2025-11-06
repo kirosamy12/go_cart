@@ -1,12 +1,19 @@
 import express from "express";
-import { addUser, changePassword, deleteUserById, getAllUsers, getUserById, updateUserById } from "./user.controler.js";
+import { 
+  addUser, 
+  changePassword, 
+  deleteUserById, 
+  getAllUsers, 
+  getUserById, 
+  updateUserById,
+  updatePersonalInfo,
+  forgotPassword,
+  resetPassword
+} from "./user.controler.js";
 import { validation } from "../../middleware/validation.js";
 import { protectRoutes } from "../Auth/auth.controler.js";
 
-
 const router= express.Router();
-
-
 
 router.post("/addUser",addUser)
 // router.get("/getAllUsers",protectRoutes,getAllUsers)
@@ -15,4 +22,9 @@ router.post("/addUser",addUser)
 // router.patch("/changePassword/:id",changePassword)
 // router.delete("/deleteUserById/:id",deleteUserById)
 
-export default router     
+// ✅ Protected routes for personal information and password management
+router.patch("/updatePersonalInfo", protectRoutes, updatePersonalInfo);
+router.post("/forgotPassword", forgotPassword);
+router.post("/resetPassword", resetPassword);
+
+export default router

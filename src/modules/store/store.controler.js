@@ -1,5 +1,6 @@
 import storeModel from "../../../DB/models/store.model.js";
 import userModel from "../../../DB/models/user.model.js";
+import sendEmail from "../../utils/sendEmail.js";
 
 
 
@@ -72,6 +73,38 @@ export const createStore = async (req, res) => {
     });
 
     await store.save();
+
+    // ✅ Send email notification to admin about new store request
+    try {
+      const adminEmail = process.env.ADMIN_EMAIL || "kirosamy2344@gmail.com";
+      const user = await userModel.findById(userId);
+      
+      await sendEmail({
+        to: adminEmail,
+        subject: "New Store Request - Pending Approval",
+        html: `
+          <h2>New Store Request</h2>
+          <p>A new store request has been submitted and is pending approval.</p>
+          <p><strong>Store Details:</strong></p>
+          <ul>
+            <li>Store Name: ${name}</li>
+            <li>Username: ${username}</li>
+            <li>Description: ${description}</li>
+            <li>Email: ${email}</li>
+            <li>Contact: ${contact}</li>
+            <li>Address: ${address}</li>
+            <li>Submitted by: ${user?.name || 'N/A'} (${user?.email || 'N/A'})</li>
+            <li>Submission Date: ${new Date().toLocaleString()}</li>
+          </ul>
+          <p>Please review and approve/reject this request in the admin panel.</p>
+        `
+      });
+      
+      console.log("📧 Admin notification email sent for new store request");
+    } catch (emailError) {
+      console.error("❌ Error sending admin notification email:", emailError);
+      // Don't fail the store creation if email sending fails
+    }
 
     res.status(201).json({
       success: true,
