@@ -16,7 +16,7 @@ const generateId = () => {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 };
 
-
+// ✅ CREATE ORDER
 export const createOrder = async (req, res) => {
   try {
     const { addressId, paymentMethod, couponCode } = req.body;
@@ -181,20 +181,40 @@ export const createOrder = async (req, res) => {
       }
 
       // إيميل الأدمن
-      await sendEmail({
-        to: adminEmail,
-        subject: "New Order Placed",
-        html: `
-          <h2>New Order Placed</h2>
-          <p>Order #${newOrder.id} placed successfully.</p>
-          <ul>
-            <li>Customer: ${customer?.name || "N/A"} (${customer?.email || "N/A"})</li>
-            <li>Store: ${store?.name || "N/A"} (${store?.email || "N/A"})</li>
-            <li>Total: $${newOrder.total}</li>
-            <li>Payment: ${newOrder.paymentMethod}</li>
-          </ul>
-        `,
-      });
+      // Get all admin users and send email to each
+      const adminUsers = await userModel.find({ role: 'admin' });
+      console.log("📧 Preparing to send order confirmation emails to admins...");
+      console.log("📧 Admin users found:", adminUsers.length);
+      console.log("📧 Admin user emails:", adminUsers.map(admin => admin.email));
+      
+      if (adminUsers && adminUsers.length > 0) {
+        let emailsSent = 0;
+        for (const admin of adminUsers) {
+          if (admin.email) {
+            try {
+              await sendEmail({
+                to: admin.email,
+                subject: "New Order Placed",
+                html: `
+                  <h2>New Order Placed</h2>
+                  <p>Order #${newOrder.id} placed successfully.</p>
+                  <ul>
+                    <li>Customer: ${customer?.name || "N/A"} (${customer?.email || "N/A"})</li>
+                    <li>Store: ${store?.name || "N/A"} (${store?.email || "N/A"})</li>
+                    <li>Total: $${newOrder.total}</li>
+                    <li>Payment: ${newOrder.paymentMethod}</li>
+                  </ul>
+                `,
+              });
+              console.log(`📧 Order confirmation email sent to admin: ${admin.email}`);
+              emailsSent++;
+            } catch (adminEmailError) {
+              console.error(`❌ Error sending email to admin ${admin.email}:`, adminEmailError);
+            }
+          }
+        }
+        console.log(`📧 Order confirmation emails sent to ${emailsSent} admin(s)`);
+      }
     } catch (emailError) {
       console.error("❌ Error sending email notifications:", emailError);
     }
@@ -493,14 +513,15 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    if (order.status === 'cancelled') {
+    if (order.status === 'cancelled' || order.status === 'CANCELLED') {
       return res.status(400).json({
         success: false,
         message: 'Cannot update status of cancelled order'
       });
     }
 
-    if (order.status === 'delivered' && status !== 'delivered') {
+    // Fix case sensitivity issue - convert both to uppercase for comparison
+    if (order.status.toUpperCase() === 'DELIVERED' && status.toUpperCase() !== 'DELIVERED') {
       return res.status(400).json({
         success: false,
         message: 'Cannot change status of delivered order'
@@ -509,14 +530,15 @@ export const updateOrderStatus = async (req, res) => {
 
     order.status = status;
     
-    if (status === 'delivered' && order.paymentMethod === 'cash') {
+    // ✅ When order is delivered, payment status should be changed to paid for all payment methods
+    if (status.toUpperCase() === 'DELIVERED') {
       order.isPaid = true;
     }
 
     await order.save();
 
     // ✅ Create invoice when order is delivered
-    if (status === 'delivered') {
+    if (status.toUpperCase() === 'DELIVERED') {
       try {
         // Get complete order with all required data
         const completeOrder = await orderModel.findOne({ id: orderId })
@@ -561,6 +583,7 @@ export const updateOrderStatus = async (req, res) => {
             email: completeOrder.userId.email
           },
           paymentMethod: completeOrder.paymentMethod,
+          status: 'paid', // ✅ Set invoice status to paid when order is delivered
           orderStatus: completeOrder.status,
           orderCreatedAt: completeOrder.createdAt,
           orderDeliveredAt: new Date()
@@ -574,11 +597,15 @@ export const updateOrderStatus = async (req, res) => {
       }
     }
 
-    // ✅ Send email notifications to customer and admin when order status changes
+    // ✅ Send email notifications to customer and all admins when order status changes
     try {
-      // Get customer and admin email addresses
+      // Get customer and all admin users
       const customer = await userModel.findById(order.userId);
-      const adminEmail = process.env.ADMIN_EMAIL || "kirosamy2344@gmail.com";
+      const adminUsers = await userModel.find({ role: 'admin' });
+      
+      console.log("📧 Preparing to send status update emails...");
+      console.log("📧 Admin users found:", adminUsers.length);
+      console.log("📧 Admin user emails:", adminUsers.map(admin => admin.email));
       
       // Email to customer
       if (customer && customer.email) {
@@ -602,25 +629,37 @@ export const updateOrderStatus = async (req, res) => {
         });
       }
 
-      // Email to admin
-      await sendEmail({
-        to: adminEmail,
-        subject: `Order Status Updated - ${orderId}`,
-        html: `
-          <h2>Order Status Update</h2>
-          <p>The status of order #${orderId} has been updated.</p>
-          <p><strong>Order Details:</strong></p>
-          <ul>
-            <li>Order ID: ${orderId}</li>
-            <li>Customer: ${customer?.name || 'N/A'} (${customer?.email || 'N/A'})</li>
-            <li>Store: ${store.name} (${store.username})</li>
-            <li>New Status: ${status}</li>
-            <li>Total Amount: $${order.total}</li>
-            <li>Payment Method: ${order.paymentMethod}</li>
-            <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
-          </ul>
-        `
-      });
+      // Email to all admins
+      if (adminUsers && adminUsers.length > 0) {
+        for (const admin of adminUsers) {
+          if (admin.email) {
+            try {
+              await sendEmail({
+                to: admin.email,
+                subject: `Order Status Updated - ${orderId}`,
+                html: `
+                  <h2>Order Status Update</h2>
+                  <p>The status of order #${orderId} has been updated.</p>
+                  <p><strong>Order Details:</strong></p>
+                  <ul>
+                    <li>Order ID: ${orderId}</li>
+                    <li>Customer: ${customer?.name || 'N/A'} (${customer?.email || 'N/A'})</li>
+                    <li>Store: ${store.name} (${store.username})</li>
+                    <li>New Status: ${status}</li>
+                    <li>Total Amount: $${order.total}</li>
+                    <li>Payment Method: ${order.paymentMethod}</li>
+                    <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
+                  </ul>
+                `
+              });
+              console.log(`📧 Status update email sent to admin: ${admin.email}`);
+            } catch (adminEmailError) {
+              console.error(`❌ Error sending email to admin ${admin.email}:`, adminEmailError);
+            }
+          }
+        }
+        console.log(`📧 Status update emails sent to ${adminUsers.length} admin(s) for order ${orderId}`);
+      }
       
       console.log(`📧 Status update emails sent for order ${orderId}`);
     } catch (emailError) {
@@ -914,7 +953,7 @@ export const trackOrder = async (req, res) => {
 
     const trackingSteps = [
       { status: "pending", label: "Order Placed", completed: true, timestamp: order.createdAt },
-      { status: "processing", label: "Processing", completed: ["processing","shipped","delivered"].includes(order.status), timestamp: (["processing","shipped","delivered"].includes(order.status) ? order.updatedAt : null) },
+      { status: "processing", label: "Processing", completed: ["processing","shipped","delivered"].includes(order.status), timestamp: (["processing ","shipped","delivered"].includes(order.status) ? order.updatedAt : null) },
       { status: "shipped", label: "Shipped", completed: ["shipped","delivered"].includes(order.status), timestamp: (["shipped","delivered"].includes(order.status) ? order.updatedAt : null) },
       { status: "delivered", label: "Delivered", completed: order.status === "delivered", timestamp: (order.status === "delivered" ? order.updatedAt : null) }
     ];
@@ -978,7 +1017,7 @@ export const getInvoices = async (req, res) => {
     const [orders, total] = await Promise.all([
       orderModel.find({ 
         userId: userId, 
-        status: 'DELIVERED',  // Only delivered orders
+        status: 'DELIVERED',  // Only delivered orders (using uppercase to match model)
         isPaid: true          // Only paid orders
       })
         .sort({ createdAt: -1 })
@@ -987,7 +1026,7 @@ export const getInvoices = async (req, res) => {
         .lean(),
       orderModel.countDocuments({ 
         userId: userId, 
-        status: 'DELIVERED',
+        status: 'DELIVERED',  // Using uppercase to match model
         isPaid: true
       })
     ]);
@@ -1045,7 +1084,7 @@ export const getInvoiceById = async (req, res) => {
     });
 
     // Only allow access to invoices for delivered and paid orders
-    if (order.status !== 'DELIVERED' || !order.isPaid) {
+    if (order.status !== 'DELIVERED' || !order.isPaid) {  // Using uppercase to match model
       return res.status(400).json({ 
         success: false, 
         message: "Invoice is only available for delivered and paid orders",

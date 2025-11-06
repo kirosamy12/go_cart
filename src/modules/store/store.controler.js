@@ -74,35 +74,52 @@ export const createStore = async (req, res) => {
 
     await store.save();
 
-    // ✅ Send email notification to admin about new store request
+    // ✅ Send email notification to all admins about new store request
     try {
-      const adminEmail = process.env.ADMIN_EMAIL || "kirosamy2344@gmail.com";
       // Use findOne with the custom id field instead of findById
       const user = await userModel.findOne({ id: userId });
+      // Get all admin users
+      const adminUsers = await userModel.find({ role: 'admin' });
       
-      console.log("📧 Attempting to send email to admin:", adminEmail);
+      console.log("📧 Attempting to send email to admins:", adminUsers.length);
+      console.log("📧 Admin user emails:", adminUsers.map(admin => admin.email));
       console.log("📧 User info:", user?.name, user?.email);
       
-      await sendEmail({
-        to: adminEmail,
-        subject: "New Store Request - Pending Approval",
-        html: `
-          <h2>New Store Request</h2>
-          <p>A new store request has been submitted and is pending approval.</p>
-          <p><strong>Store Details:</strong></p>
-          <ul>
-            <li>Store Name: ${name}</li>
-            <li>Username: ${username}</li>
-            <li>Description: ${description}</li>
-            <li>Email: ${email}</li>
-            <li>Contact: ${contact}</li>
-            <li>Address: ${address}</li>
-            <li>Submitted by: ${user?.name || 'N/A'} (${user?.email || 'N/A'})</li>
-            <li>Submission Date: ${new Date().toLocaleString()}</li>
-          </ul>
-          <p>Please review and approve/reject this request in the admin panel.</p>
-        `
-      });
+      // Send email to all admins
+      if (adminUsers && adminUsers.length > 0) {
+        let emailsSent = 0;
+        for (const admin of adminUsers) {
+          if (admin.email) {
+            try {
+              await sendEmail({
+                to: admin.email,
+                subject: "New Store Request - Pending Approval",
+                html: `
+                  <h2>New Store Request</h2>
+                  <p>A new store request has been submitted and is pending approval.</p>
+                  <p><strong>Store Details:</strong></p>
+                  <ul>
+                    <li>Store Name: ${name}</li>
+                    <li>Username: ${username}</li>
+                    <li>Description: ${description}</li>
+                    <li>Email: ${email}</li>
+                    <li>Contact: ${contact}</li>
+                    <li>Address: ${address}</li>
+                    <li>Submitted by: ${user?.name || 'N/A'} (${user?.email || 'N/A'})</li>
+                    <li>Submission Date: ${new Date().toLocaleString()}</li>
+                  </ul>
+                  <p>Please review and approve/reject this request in the admin panel.</p>
+                `
+              });
+              console.log(`📧 Admin notification email sent successfully to: ${admin.email}`);
+              emailsSent++;
+            } catch (adminEmailError) {
+              console.error(`❌ Error sending email to admin ${admin.email}:`, adminEmailError);
+            }
+          }
+        }
+        console.log(`📧 Admin notification emails sent successfully to ${emailsSent} admin(s) for new store request`);
+      }
       
       console.log("📧 Admin notification email sent successfully for new store request");
     } catch (emailError) {
@@ -373,6 +390,9 @@ export const updateStoreStatus = async (req, res) => {
           });
           
           console.log(`📧 Approval email sent to store owner: ${storeOwner.email}`);
+        } else {
+          console.log("📧 No email found for store owner or store owner not found");
+          console.log("📧 Store owner details:", storeOwner);
         }
       } catch (emailError) {
         console.error("❌ Error sending approval email to store owner:", emailError);
