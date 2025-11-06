@@ -1,18 +1,34 @@
+import storeModel from"../../../DB/models/store.model.js"
+import addressModel from"../../../DB/models/address.model.js"
+import productModel from"../../../DB/models/products.model.js"
+import orderModel from "../../../DB/models/orderModel.js";
+import cartModel from "../../../DB/models/cart.model.js";
+import mongoose from "mongoose";
+import userModel from "../../../DB/models/user.model.js";
+import couponModel from "../../../DB/models/coupon.model.js";
+import sendEmail from "../../../src/utils/sendEmail.js";
+const ObjectId = mongoose.Types.ObjectId;
+
+const toStr = v => (v ? v.toString() : v);
+
+const generateId = () => {
+  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+};
+
+
 export const createOrder = async (req, res) => {
   try {
     const { addressId, paymentMethod, couponCode } = req.body;
-
-    const userId = req.user._id; // ✅ استخدم ObjectId مباشرة
+    const userId = req.user._id;
 
     console.log("🧩 Debug Info:");
     console.log("addressId:", addressId);
     console.log("userId from token:", userId);
 
-    // ✅ تحقق من paymentMethod
     if (!paymentMethod || !["CASH", "VISA"].includes(paymentMethod)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invalid payment method. Must be CASH or VISA" 
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment method. Must be CASH or VISA",
       });
     }
 
@@ -21,159 +37,111 @@ export const createOrder = async (req, res) => {
     }
 
     const address = await addressModel.findById(addressId);
- 
     if (!address) {
-      console.log("🔍 Address found: ❌ NO");
-      return res.status(404).json({ 
-        success: false, 
-        message: "Address not found"
-      });
+      return res.status(404).json({ success: false, message: "Address not found" });
     }
 
-    console.log("🔍 Address found: ✅ YES");
-
-    // ✅ احضر الكارت بتاع المستخدم
     const cart = await cartModel.findOne({ userId: userId.toString() });
-    
-    console.log("🛒 Cart Debug:");
-    console.log("Cart found:", !!cart);
-    console.log("Cart items:", cart?.items);
-    
     if (!cart) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Cart not found" 
-      });
+      return res.status(400).json({ success: false, message: "Cart not found" });
     }
 
     if (!cart.items || !Array.isArray(cart.items) || cart.items.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Your cart is empty" 
-      });
+      return res.status(400).json({ success: false, message: "Your cart is empty" });
     }
 
-    // ✅ احضر تفاصيل المنتجات من الداتابيس
+    // ✅ جمع تفاصيل المنتجات
     const orderItems = await Promise.all(
       cart.items.map(async (item) => {
-        console.log("🔍 Looking for product:", item.productId);
-        
         let product;
-        
-        // ✅ دور بطرق مختلفة
+
         if (mongoose.Types.ObjectId.isValid(item.productId)) {
           product = await productModel.findById(item.productId);
         }
-        
+
         if (!product) {
-          product = await productModel.findOne({ 
+          product = await productModel.findOne({
             $or: [
               { id: item.productId },
               { slug: item.productId },
-              { sku: item.productId }
-            ]
+              { sku: item.productId },
+            ],
           });
         }
-        
-        if (!product) {
-          console.error(`❌ Product not found: ${item.productId}`);
-          throw new Error(`Product ${item.productId} not found`);
-        }
-        
-        console.log("✅ Product found:", product.name, "storeId:", product.storeId);
-        
-        // ✅ تأكد إن المنتج عنده storeId
-        if (!product.storeId) {
-          throw new Error(`Product ${product.name} doesn't have a storeId`);
-        }
-        
+
+        if (!product) throw new Error(`Product ${item.productId} not found`);
+        if (!product.storeId) throw new Error(`Product ${product.name} doesn't have a storeId`);
+
         return {
-          productId: product._id, // ✅ استخدم ObjectId الصحيح
+          productId: product._id,
           quantity: item.quantity,
           price: product.price,
           selectedColor: item.selectedColor || null,
-          selectedSize: item.selectedSize || null, // ✅ إضافة المقاس المحدد
-          storeId: product.storeId // ✅ احفظ storeId للتحقق
+          selectedSize: item.selectedSize || null,
+          storeId: product.storeId,
         };
       })
     );
 
-    // ✅ تحقّق إن كل المنتجات من نفس الـ store
-    const storeIds = [...new Set(orderItems.map(item => item.storeId.toString()))];
-    
+    // ✅ تأكد أن كل المنتجات من نفس الـ store
+    const storeIds = [...new Set(orderItems.map((i) => i.storeId.toString()))];
     if (storeIds.length > 1) {
       return res.status(400).json({
         success: false,
-        message: "Cannot create order with products from multiple stores. Please checkout one store at a time."
+        message: "Cannot create order with products from multiple stores.",
       });
     }
-    
+
     const storeId = orderItems[0].storeId;
+    const total = orderItems.reduce((acc, i) => acc + i.price * i.quantity, 0);
 
-    // ✅ احسب إجمالي السعر
-    const total = orderItems.reduce((acc, item) => {
-      return acc + (item.price || 0) * (item.quantity || 0);
-    }, 0);
-
-    console.log("💰 Total Price:", total);
-    console.log("🏪 Store ID:", storeId);
-
-    // ✅ معالجة الكوبون (لو موجود)
+    // ✅ معالجة الكوبون
     let couponData = {};
     let isCouponUsed = false;
-    
     if (couponCode) {
-      // ✅ دور على الكوبون في الداتابيس
       const coupon = await couponModel.findOne({ code: couponCode, isActive: true });
-      
       if (coupon) {
-        // يمكنك تطبيق خصم هنا
         isCouponUsed = true;
-        couponData = {
-          code: coupon.code,
-          discount: coupon.discount
-        };
-        console.log("🎟️ Coupon applied:", couponCode);
-      } else {
-        console.log("⚠️ Invalid or inactive coupon:", couponCode);
+        couponData = { code: coupon.code, discount: coupon.discount };
       }
     }
 
-    // ✅ أنشئ الأورダー مع كل الـ fields المطلوبة
+    // ✅ إنشاء الأوردر
     const newOrder = await orderModel.create({
-      id: Math.random().toString(36).substr(2, 9) + Date.now().toString(36), // ✅ Generate unique ID
-      userId, // ✅ ObjectId
-      storeId, // ✅ ObjectId من المنتج
-      addressId, // ✅ ObjectId
-      paymentMethod, // ✅ CASH أو VISA
-      total, // ✅ مطلوب
-      isCouponUsed, // ✅ Boolean
-      coupon: couponData, // ✅ Object
-      orderItems: orderItems.map(item => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        price: item.price,
-        selectedColor: item.selectedColor,
-        selectedSize: item.selectedSize
-      })), // ✅ بدون storeId في orderItems
-      status: "ORDER_PLACED", // ✅ default value
-      isPaid: paymentMethod === "VISA" ? false : false // يمكنك تعديله حسب منطق الدفع
+      id: Math.random().toString(36).substr(2, 9) + Date.now().toString(36),
+      userId,
+      storeId,
+      addressId,
+      paymentMethod,
+      total,
+      isCouponUsed,
+      coupon: couponData,
+      orderItems: orderItems.map((i) => ({
+        productId: i.productId,
+        quantity: i.quantity,
+        price: i.price,
+        selectedColor: i.selectedColor,
+        selectedSize: i.selectedSize,
+      })),
+      status: "ORDER_PLACED",
+      isPaid: false,
     });
 
-    console.log("✅ Order created successfully:", newOrder._id);
-
-    // ✅ فضي الكارت بعد إنشاء الأورダー
+    // ✅ فضي الكارت
     cart.items = [];
     await cart.save();
 
-    // ✅ Send email notifications to customer, store owner, and admin
+    // ✅ إرسال الإيميلات
     try {
-      // Get customer, store owner, and admin email addresses
       const customer = await userModel.findById(userId);
       const store = await storeModel.findById(storeId);
       const adminEmail = process.env.ADMIN_EMAIL || "kirosamy2344@gmail.com";
 
-      // Email to customer
+      console.log("📧 Sending emails...");
+      console.log("Customer email:", customer?.email);
+      console.log("Store email:", store?.email);
+
+      // إيميل العميل
       if (customer && customer.email) {
         await sendEmail({
           to: customer.email,
@@ -182,7 +150,6 @@ export const createOrder = async (req, res) => {
             <h2>Order Confirmation</h2>
             <p>Dear ${customer.name},</p>
             <p>Your order #${newOrder.id} has been successfully placed.</p>
-            <p><strong>Order Details:</strong></p>
             <ul>
               <li>Order ID: ${newOrder.id}</li>
               <li>Total Amount: $${newOrder.total}</li>
@@ -190,11 +157,11 @@ export const createOrder = async (req, res) => {
               <li>Status: ${newOrder.status}</li>
             </ul>
             <p>Thank you for your purchase!</p>
-          `
+          `,
         });
       }
 
-      // Email to store owner
+      // إيميل المتجر
       if (store && store.email) {
         await sendEmail({
           to: store.email,
@@ -203,39 +170,32 @@ export const createOrder = async (req, res) => {
             <h2>New Order Received</h2>
             <p>Hello ${store.name},</p>
             <p>You have received a new order #${newOrder.id}.</p>
-            <p><strong>Order Details:</strong></p>
             <ul>
-              <li>Order ID: ${newOrder.id}</li>
-              <li>Customer: ${customer?.name || 'N/A'}</li>
-              <li>Total Amount: $${newOrder.total}</li>
-              <li>Payment Method: ${newOrder.paymentMethod}</li>
+              <li>Customer: ${customer?.name || "N/A"}</li>
+              <li>Total: $${newOrder.total}</li>
+              <li>Payment: ${newOrder.paymentMethod}</li>
             </ul>
-            <p>Please process this order as soon as possible.</p>
-          `
+          `,
         });
       }
 
-      // Email to admin
+      // إيميل الأدمن
       await sendEmail({
         to: adminEmail,
         subject: "New Order Placed",
         html: `
           <h2>New Order Placed</h2>
-          <p>A new order #${newOrder.id} has been placed.</p>
-          <p><strong>Order Details:</strong></p>
+          <p>Order #${newOrder.id} placed successfully.</p>
           <ul>
-            <li>Order ID: ${newOrder.id}</li>
-            <li>Customer: ${customer?.name || 'N/A'} (${customer?.email || 'N/A'})</li>
-            <li>Store: ${store?.name || 'N/A'} (${store?.email || 'N/A'})</li>
-            <li>Total Amount: $${newOrder.total}</li>
-            <li>Payment Method: ${newOrder.paymentMethod}</li>
-            <li>Status: ${newOrder.status}</li>
+            <li>Customer: ${customer?.name || "N/A"} (${customer?.email || "N/A"})</li>
+            <li>Store: ${store?.name || "N/A"} (${store?.email || "N/A"})</li>
+            <li>Total: $${newOrder.total}</li>
+            <li>Payment: ${newOrder.paymentMethod}</li>
           </ul>
-        `
+        `,
       });
     } catch (emailError) {
       console.error("❌ Error sending email notifications:", emailError);
-      // Don't fail the order creation if email sending fails
     }
 
     return res.status(201).json({
@@ -251,13 +211,13 @@ export const createOrder = async (req, res) => {
         coupon: newOrder.coupon,
         createdAt: newOrder.createdAt,
       },
-    });  
+    });
   } catch (error) {
     console.error("❌ Error creating order:", error);
-    return res.status(500).json({ 
-      success: false, 
-      message: "Server error", 
-      error: error.message 
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
     });
   }
 };
