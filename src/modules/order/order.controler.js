@@ -547,50 +547,54 @@ export const updateOrderStatus = async (req, res) => {
           .populate('addressId')
           .populate('orderItems.productId', 'id name images price colors sizes');
 
-        // Get store information
-        const store = await storeModel.findById(completeOrder.storeId);
-        
-        // Create invoice items from order items
-        const invoiceItems = completeOrder.orderItems.map(item => ({
-          productId: item.productId._id,
-          name: item.productId.name,
-          images: item.productId.images,
-          quantity: item.quantity,
-          unitPrice: item.price,
-          lineTotal: item.price * item.quantity,
-          selectedColor: item.selectedColor,
-          selectedSize: item.selectedSize,
-          availableColors: item.productId.colors,
-          availableSizes: item.productId.sizes
-        }));
+        if (completeOrder) {
+          // Get store information
+          const store = await storeModel.findById(completeOrder.storeId);
+          
+          // Create invoice items from order items
+          const invoiceItems = completeOrder.orderItems.map(item => ({
+            productId: item.productId._id,
+            name: item.productId.name,
+            images: item.productId.images,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            lineTotal: item.price * item.quantity,
+            selectedColor: item.selectedColor,
+            selectedSize: item.selectedSize,
+            availableColors: item.productId.colors,
+            availableSizes: item.productId.sizes
+          }));
 
-        // Create invoice
-        const newInvoice = new invoiceModel({
-          orderId: completeOrder._id,
-          userId: completeOrder.userId._id,
-          storeId: completeOrder.storeId._id,
-          items: invoiceItems,
-          subtotal: completeOrder.total,
-          total: completeOrder.total,
-          billingAddress: completeOrder.addressId,
-          sellerInfo: {
-            name: store.name,
-            email: store.email,
-            username: store.username
-          },
-          buyerInfo: {
-            name: completeOrder.userId.name,
-            email: completeOrder.userId.email
-          },
-          paymentMethod: completeOrder.paymentMethod,
-          status: 'paid', // ✅ Set invoice status to paid when order is delivered
-          orderStatus: completeOrder.status,
-          orderCreatedAt: completeOrder.createdAt,
-          orderDeliveredAt: new Date()
-        });
+          // Create invoice
+          const newInvoice = new invoiceModel({
+            orderId: completeOrder._id,
+            userId: completeOrder.userId._id,
+            storeId: completeOrder.storeId._id,
+            items: invoiceItems,
+            subtotal: completeOrder.total,
+            total: completeOrder.total,
+            billingAddress: completeOrder.addressId,
+            sellerInfo: {
+              name: store ? store.name : 'Unknown Store',
+              email: store ? store.email : '',
+              username: store ? store.username : ''
+            },
+            buyerInfo: {
+              name: completeOrder.userId.name,
+              email: completeOrder.userId.email
+            },
+            paymentMethod: completeOrder.paymentMethod,
+            status: 'paid', // ✅ Set invoice status to paid when order is delivered
+            orderStatus: completeOrder.status,
+            orderCreatedAt: completeOrder.createdAt,
+            orderDeliveredAt: new Date()
+          });
 
-        await newInvoice.save();
-        console.log(`✅ Invoice created for order ${orderId}`);
+          await newInvoice.save();
+          console.log(`✅ Invoice created for order ${orderId}`);
+        } else {
+          console.error(`❌ Could not find complete order ${orderId} for invoice creation`);
+        }
       } catch (invoiceError) {
         console.error("❌ Error creating invoice:", invoiceError);
         // Don't fail the order update if invoice creation fails
