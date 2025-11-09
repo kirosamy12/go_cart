@@ -1047,15 +1047,28 @@ export const getInvoices = async (req, res) => {
       })
     ]);
 
+    // Return basic invoice information
+    const basicInvoices = invoices.map(invoice => ({
+      invoiceNumber: invoice.invoiceNumber,
+      orderId: invoice.orderId,
+      total: invoice.total,
+      status: invoice.status,
+      createdAt: invoice.createdAt,
+      sellerInfo: {
+        name: invoice.sellerInfo?.name || 'Unknown Store',
+        username: invoice.sellerInfo?.username || 'unknown'
+      }
+    }));
+
     // Debug logging
-    console.log("Found invoices:", invoices.map(i => ({ invoiceNumber: i.invoiceNumber, orderId: i.orderId })));
+    console.log("Found invoices:", basicInvoices.map(i => ({ invoiceNumber: i.invoiceNumber, orderId: i.orderId })));
 
     res.json({
       success: true,
       page: parseInt(page, 10),
       limit: parseInt(limit, 10),
       total: total,
-      invoices: invoices
+      invoices: basicInvoices
     });
   } catch (error) {
     console.error("Get invoices error:", error);
@@ -1135,15 +1148,28 @@ export const getStoreInvoices = async (req, res) => {
       })
     ]);
 
+    // Return basic invoice information
+    const basicInvoices = invoices.map(invoice => ({
+      invoiceNumber: invoice.invoiceNumber,
+      orderId: invoice.orderId,
+      total: invoice.total,
+      status: invoice.status,
+      createdAt: invoice.createdAt,
+      buyerInfo: {
+        name: invoice.buyerInfo?.name || 'Unknown Customer',
+        email: invoice.buyerInfo?.email || 'N/A'
+      }
+    }));
+
     // Debug logging
-    console.log("Found invoices:", invoices.map(i => ({ invoiceNumber: i.invoiceNumber, orderId: i.orderId })));
+    console.log("Found invoices:", basicInvoices.map(i => ({ invoiceNumber: i.invoiceNumber, orderId: i.orderId })));
 
     res.json({
       success: true,
       page: parseInt(page, 10),
       limit: parseInt(limit, 10),
       total: total,
-      invoices: invoices
+      invoices: basicInvoices
     });
   } catch (error) {
     console.error("Get store invoices error:", error);
