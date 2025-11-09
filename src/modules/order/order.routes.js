@@ -19,7 +19,9 @@ getMyOrders,
    getAllSuccessfulOrders,
    getSuccessfulOrderById,
    getStoreSuccessfulOrders,
-   getStoreSuccessfulOrderById
+   getStoreSuccessfulOrderById,
+   getStoreInvoices,
+   getStoreInvoiceById
 } from '../order/order.controler.js';
 import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js';
 
@@ -47,6 +49,10 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  // Invoices
  router.get("/kiro/order/invoices", protectRoutes, getInvoices);
  router.get("/order/invoice/:orderId", protectRoutes, getInvoiceById);
+ 
+ // Store Invoices
+ router.get("/store/invoices", protectRoutes, allowTo("store"), getStoreInvoices);
+ router.get("/store/invoice/:orderId", protectRoutes, allowTo("store"), getStoreInvoiceById);
  
  // Successful delivered orders for user
  router.get("/orders/successful", protectRoutes, getSuccessfulOrders);

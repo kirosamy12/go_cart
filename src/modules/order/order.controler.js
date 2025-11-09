@@ -1032,16 +1032,18 @@ export const getInvoices = async (req, res) => {
     console.log("Fetching invoices for user:", userId);
 
     // Get invoices for the user from the Invoice collection
+    // Convert userId string to ObjectId for proper comparison
+    const userObjectId = new mongoose.Types.ObjectId(userId);
     const [invoices, total] = await Promise.all([
       invoiceModel.find({ 
-        userId: userId
+        userId: userObjectId
       })
         .sort({ createdAt: -1 })
         .skip(parseInt(skip, 10))
         .limit(parseInt(limit, 10))
         .lean(),
       invoiceModel.countDocuments({ 
-        userId: userId
+        userId: userObjectId
       })
     ]);
 
@@ -1073,6 +1075,7 @@ export const getInvoiceById = async (req, res) => {
     if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
 
     // Check if the user has permission to view this invoice
+    // Convert both userIds to strings for proper comparison
     if (invoice.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ 
         success: false, 
@@ -1084,7 +1087,7 @@ export const getInvoiceById = async (req, res) => {
     console.log("Invoice debug info:", {
       invoiceNumber: invoice.invoiceNumber,
       orderId: invoice.orderId,
-      userId: invoice.userId,
+      userId: invoice.userId.toString(),
       requestedUserId: req.user._id.toString(),
       userIdsMatch: invoice.userId.toString() === req.user._id.toString()
     });
@@ -1092,6 +1095,104 @@ export const getInvoiceById = async (req, res) => {
     res.json({ success: true, invoice });
   } catch (error) {
     console.error("Get invoice by id error:", error);
+    res.status(500).json({ success: false, message: "Something went wrong while fetching invoice" });
+  }
+};
+
+
+// ✅ GET STORE INVOICES
+export const getStoreInvoices = async (req, res) => {
+  try {
+    // Get store for the authenticated user
+    const store = await storeModel.findOne({ userId: req.user.id });
+    if (!store) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have a store'
+      });
+    }
+
+    const storeId = store._id.toString();
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Debug logging
+    console.log("Fetching invoices for store:", storeId);
+
+    // Get invoices for the store from the Invoice collection
+    // Convert storeId string to ObjectId for proper comparison
+    const storeObjectId = new mongoose.Types.ObjectId(storeId);
+    const [invoices, total] = await Promise.all([
+      invoiceModel.find({ 
+        storeId: storeObjectId
+      })
+        .sort({ createdAt: -1 })
+        .skip(parseInt(skip, 10))
+        .limit(parseInt(limit, 10))
+        .lean(),
+      invoiceModel.countDocuments({ 
+        storeId: storeObjectId
+      })
+    ]);
+
+    // Debug logging
+    console.log("Found invoices:", invoices.map(i => ({ invoiceNumber: i.invoiceNumber, orderId: i.orderId })));
+
+    res.json({
+      success: true,
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
+      total: total,
+      invoices: invoices
+    });
+  } catch (error) {
+    console.error("Get store invoices error:", error);
+    res.status(500).json({ success: false, message: "Something went wrong while fetching store invoices" });
+  }
+};
+
+
+// ✅ GET STORE INVOICE BY ID
+export const getStoreInvoiceById = async (req, res) => {
+  try {
+    // Get store for the authenticated user
+    const store = await storeModel.findOne({ userId: req.user.id });
+    if (!store) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have a store'
+      });
+    }
+
+    const storeId = store._id.toString();
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ success: false, message: "Order ID is required" });
+
+    // Find the invoice by orderId
+    const invoice = await invoiceModel.findOne({ orderId: orderId }).lean();
+    if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
+
+    // Check if the invoice belongs to this store
+    // Convert both storeIds to strings for proper comparison
+    if (invoice.storeId.toString() !== storeId) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "You do not have permission to view this invoice"
+      });
+    }
+
+    // Debug logging to see what's happening
+    console.log("Invoice debug info:", {
+      invoiceNumber: invoice.invoiceNumber,
+      orderId: invoice.orderId,
+      storeId: invoice.storeId.toString(),
+      requestedStoreId: storeId,
+      storeIdsMatch: invoice.storeId.toString() === storeId
+    });
+
+    res.json({ success: true, invoice });
+  } catch (error) {
+    console.error("Get store invoice by id error:", error);
     res.status(500).json({ success: false, message: "Something went wrong while fetching invoice" });
   }
 };
