@@ -531,7 +531,7 @@ export const updateOrderStatus = async (req, res) => {
     order.status = status;
     
     // ✅ When order is delivered, payment status should be changed to paid for all payment methods
-    if (status.toUpperCase() === 'DELIVERED') {
+    if (status && status.toUpperCase() === 'DELIVERED') {
       order.isPaid = true;
     }
 
@@ -603,8 +603,9 @@ export const updateOrderStatus = async (req, res) => {
 
     // ✅ Send email notifications to customer and all admins when order status changes
     try {
-      // Get customer and all admin users
+      // Get customer, store, and all admin users
       const customer = await userModel.findById(order.userId);
+      const store = await storeModel.findById(order.storeId);
       const adminUsers = await userModel.find({ role: 'admin' });
       
       console.log("📧 Preparing to send status update emails...");
@@ -648,7 +649,7 @@ export const updateOrderStatus = async (req, res) => {
                   <ul>
                     <li>Order ID: ${orderId}</li>
                     <li>Customer: ${customer?.name || 'N/A'} (${customer?.email || 'N/A'})</li>
-                    <li>Store: ${store.name} (${store.username})</li>
+                    <li>Store: ${store?.name || 'N/A'} (${store?.username || 'N/A'})</li>
                     <li>New Status: ${status}</li>
                     <li>Total Amount: $${order.total}</li>
                     <li>Payment Method: ${order.paymentMethod}</li>
