@@ -544,7 +544,10 @@ export const updateOrderStatus = async (req, res) => {
         const completeOrder = await orderModel.findOne({ id: orderId })
           .populate('userId', 'id name email phone')
           .populate('storeId', 'id name username email')
-          .populate('addressId')
+          .populate({
+            path: 'addressId',
+            select: 'name email street city state zip country phone'
+          })
           .populate('orderItems.productId', 'id name images price colors sizes');
 
         if (completeOrder) {
@@ -565,9 +568,19 @@ export const updateOrderStatus = async (req, res) => {
             availableSizes: item.productId.sizes
           }));
 
+          // Generate invoice number
+          const date = new Date();
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          const dateStr = `${year}${month}${day}`;
+          const timestamp = Date.now().toString().slice(-4).padStart(4, '0');
+          const invoiceNumber = `INV-${dateStr}-${timestamp}`;
+
           // Create invoice
           const newInvoice = new invoiceModel({
-            orderId: completeOrder._id,
+            invoiceNumber: invoiceNumber,
+            orderId: completeOrder._id, // Use the MongoDB ObjectId, not the string id
             userId: completeOrder.userId._id,
             storeId: completeOrder.storeId._id,
             items: invoiceItems,
@@ -591,7 +604,7 @@ export const updateOrderStatus = async (req, res) => {
           });
 
           await newInvoice.save();
-          console.log(`✅ Invoice created for order ${orderId}`);
+          console.log(`✅ Invoice created for order ${orderId} with number ${invoiceNumber}`);
         } else {
           console.error(`❌ Could not find complete order ${orderId} for invoice creation`);
         }

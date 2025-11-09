@@ -131,10 +131,9 @@ invoiceSchema.index({ orderId: 1 });
 invoiceSchema.index({ userId: 1 });
 invoiceSchema.index({ storeId: 1 });
 invoiceSchema.index({ issuedAt: -1 });
-invoiceSchema.index({ invoiceNumber: 1 });
 
 // Pre-save middleware to generate invoice number if not provided
-invoiceSchema.pre('save', async function(next) {
+invoiceSchema.pre('save', function(next) {
   if (!this.invoiceNumber) {
     // Generate a more professional invoice number format: INV-YYYYMMDD-XXXX
     const date = new Date();
@@ -143,21 +142,10 @@ invoiceSchema.pre('save', async function(next) {
     const day = String(date.getDate()).padStart(2, '0');
     const dateStr = `${year}${month}${day}`;
     
-    // Get the count of invoices created today to generate a sequential number
-    const startOfDay = new Date(date.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(date.setHours(23, 59, 59, 999));
-    
-    const count = await mongoose.model("Invoice").countDocuments({
-      createdAt: {
-        $gte: startOfDay,
-        $lte: endOfDay
-      }
-    });
-    
-    // Generate sequential number (starting from 0001)
-    const sequentialNumber = String(count + 1).padStart(4, '0');
-    
-    this.invoiceNumber = `INV-${dateStr}-${sequentialNumber}`;
+    // Simple approach - use timestamp as fallback
+    const timestamp = Date.now().toString().slice(-4).padStart(4, '0');
+    this.invoiceNumber = `INV-${dateStr}-${timestamp}`;
+    console.log('Generated invoice number:', this.invoiceNumber);
   }
   next();
 });
