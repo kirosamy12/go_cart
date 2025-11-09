@@ -1031,42 +1031,22 @@ export const getInvoices = async (req, res) => {
     // Debug logging
     console.log("Fetching invoices for user:", userId);
 
-    // Get delivered and paid orders for the user (invoices are only for delivered and paid orders)
-    const [orders, total] = await Promise.all([
-      orderModel.find({ 
-        userId: userId, 
-        status: 'DELIVERED',  // Only delivered orders (using uppercase to match model)
-        isPaid: true          // Only paid orders
+    // Get invoices for the user from the Invoice collection
+    const [invoices, total] = await Promise.all([
+      invoiceModel.find({ 
+        userId: userId
       })
         .sort({ createdAt: -1 })
         .skip(parseInt(skip, 10))
         .limit(parseInt(limit, 10))
         .lean(),
-      orderModel.countDocuments({ 
-        userId: userId, 
-        status: 'DELIVERED',  // Using uppercase to match model
-        isPaid: true
+      invoiceModel.countDocuments({ 
+        userId: userId
       })
     ]);
 
     // Debug logging
-    console.log("Found orders:", orders.map(o => ({ id: o.id, status: o.status, isPaid: o.isPaid })));
-
-    const invoices = orders.map(order => {
-      const subtotal = order.orderItems.reduce((s, it) => s + (it.price * it.quantity), 0);
-      const total = order.total;
-      
-      return {
-        invoiceNumber: `INV-${order.id}`,
-        orderId: order.id,
-        createdAt: order.createdAt,
-        subtotal: subtotal,
-        total: total,
-        status: order.status,
-        isPaid: order.isPaid,
-        username: req.user.name  // Add username to invoice
-      };
-    });
+    console.log("Found invoices:", invoices.map(i => ({ invoiceNumber: i.invoiceNumber, orderId: i.orderId })));
 
     res.json({
       success: true,
@@ -1082,98 +1062,34 @@ export const getInvoices = async (req, res) => {
 };
 
 
-// ✅ GET INVOICE BY ID (مع الألوان)
+// ✅ GET INVOICE BY ID
 export const getInvoiceById = async (req, res) => {
   try {
     const { orderId } = req.params;
     if (!orderId) return res.status(400).json({ success: false, message: "Order ID is required" });
 
-    const order = await orderModel.findOne({ id: orderId }).lean();
-    if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+    // Find the invoice by orderId
+    const invoice = await invoiceModel.findOne({ orderId: orderId }).lean();
+    if (!invoice) return res.status(404).json({ success: false, message: "Invoice not found" });
 
-    // Debug logging to see what's happening
-    console.log("Order debug info:", {
-      id: order.id,
-      status: order.status,
-      isPaid: order.isPaid,
-      orderUserId: toStr(order.userId),
-      requestedUserId: req.user._id.toString(),
-      userIdsMatch: toStr(order.userId) === req.user._id.toString()
-    });
-
-    // Only allow access to invoices for delivered and paid orders
-    if (order.status !== 'DELIVERED' || !order.isPaid) {  // Using uppercase to match model
-      return res.status(400).json({ 
-        success: false, 
-        message: "Invoice is only available for delivered and paid orders",
-        debug: {
-          status: order.status,
-          isPaid: order.isPaid,
-          requiredStatus: 'DELIVERED'
-        }
-      });
-    }
-
-    if (toStr(order.userId) !== req.user._id.toString()) {
+    // Check if the user has permission to view this invoice
+    if (invoice.userId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ 
         success: false, 
-        message: "You do not have permission to view this invoice",
-        debug: {
-          orderUserId: toStr(order.userId),
-          requestedUserId: req.user._id.toString()
-        }
+        message: "You do not have permission to view this invoice"
       });
     }
 
-    const store = order.storeId ? await storeModel.findById(order.storeId).lean() : null;
-    const address = order.addressId ? await addressModel.findById(order.addressId).lean() : null;
-    const products = await productModel.find({ _id: { $in: order.orderItems.map(i => i.productId) } }).lean();
-    const productMap = {};
-    products.forEach(p => (productMap[p._id.toString()] = p));
-
-    const items = order.orderItems.map(it => {
-      const product = productMap[it.productId.toString()];
-      return {
-        productId: it.productId,
-        name: (product && product.name) || "Product",
-        selectedColor: it.selectedColor || null, // ← اللون المختار
-        selectedSize: it.selectedSize || null, // ← المقاس المختار
-        availableColors: (product && product.colors) || [], // ← الألوان المتاحة
-        availableSizes: (product && product.sizes) || [], // ← المقاسات المتاحة
-        quantity: it.quantity,
-        unitPrice: it.price,
-        lineTotal: it.price * it.quantity
-      };
+    // Debug logging to see what's happening
+    console.log("Invoice debug info:", {
+      invoiceNumber: invoice.invoiceNumber,
+      orderId: invoice.orderId,
+      userId: invoice.userId,
+      requestedUserId: req.user._id.toString(),
+      userIdsMatch: invoice.userId.toString() === req.user._id.toString()
     });
 
-    const subtotal = items.reduce((s, it) => s + it.lineTotal, 0);
-    const total = order.total;
-
-    const invoice = {
-      invoiceNumber: `INV-${order.id}`,
-      orderId: order.id,
-      createdAt: order.createdAt,
-      seller: {
-        name: store ? store.name : "Marketplace",
-        email: store ? store.email : null,
-        address: store ? store.address : null
-      },
-      buyer: {
-        id: order.userId,
-        name: req.user.name,  // Add username to invoice
-        email: req.user.email
-      },
-      billingAddress: address || null,
-      items,
-      subtotal,
-      total,
-      status: order.status,
-      isPaid: order.isPaid,
-      username: req.user.name  // Add username to invoice
-    };
-
     res.json({ success: true, invoice });
-
   } catch (error) {
     console.error("Get invoice by id error:", error);
     res.status(500).json({ success: false, message: "Something went wrong while fetching invoice" });
