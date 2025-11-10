@@ -7,7 +7,7 @@ const authRouter= express.Router();
 
 authRouter.post("/createStore",protectRoutes,uploadSingle("logo"),createStore)
 authRouter.get("/getAllStores",getAllStores)
-authRouter.get("/:username",getStoreByUsername)
+authRouter.get("/store/:username",getStoreByUsername)
 authRouter.put('/stores/:storeId/status', protectRoutes,allowTo("admin"), updateStoreStatus);
 authRouter.get('/admin/stores/pending', protectRoutes,allowTo("admin"),getPendingStores);
 authRouter.get("/admin/getAllUsers", protectRoutes,allowTo("admin"), getAllUsers);
