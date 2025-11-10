@@ -824,3 +824,281 @@ export const getAdvancedStoreAnalytics = async (req, res) => {
     res.status(500).json({ success: false, message: 'Error fetching advanced store analytics', error: err.message });
   }
 };
+
+// 📊 GET DASHBOARD SUMMARY
+export const getDashboardSummary = async (req, res) => {
+  try {
+    // Get key metrics for the dashboard
+    const totalRevenue = await calculateTotalRevenue();
+    const totalOrders = await orderModel.countDocuments();
+    const totalProducts = await productModel.countDocuments();
+    const totalStores = await storeModel.countDocuments();
+
+    res.json({
+      success: true,
+      data: {
+        totalRevenue,
+        totalOrders,
+        totalProducts,
+        totalStores
+      }
+    });
+  } catch (err) {
+    console.error('Dashboard Summary Error:', err);
+    res.status(500).json({ success: false, message: 'Error fetching dashboard summary', error: err.message });
+  }
+};
+
+// 📈 GET REVENUE TREND
+export const getRevenueTrend = async (req, res) => {
+  try {
+    const { period = 'monthly' } = req.query; // 'monthly' or 'weekly'
+    
+    let dateRange, dateFormat;
+    const now = new Date();
+    
+    if (period === 'weekly') {
+      // Last 12 weeks
+      const twelveWeeksAgo = new Date();
+      twelveWeeksAgo.setDate(twelveWeeksAgo.getDate() - 12 * 7);
+      dateRange = twelveWeeksAgo;
+      dateFormat = "%Y-%U"; // Year and week number
+    } else {
+      // Last 12 months
+      const twelveMonthsAgo = new Date();
+      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+      dateRange = twelveMonthsAgo;
+      dateFormat = "%Y-%m"; // Year and month
+    }
+
+    const revenueTrend = await orderModel.aggregate([
+      { 
+        $match: { 
+          status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] }, 
+          createdAt: { $gte: dateRange } 
+        } 
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: dateFormat, date: "$createdAt" }
+          },
+          revenue: { $sum: "$total" },
+          orderCount: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          period: "$_id",
+          revenue: 1,
+          orderCount: 1
+        }
+      },
+      { $sort: { "period": 1 } }
+    ]);
+
+    res.json({
+      success: true,
+      data: revenueTrend
+    });
+  } catch (err) {
+    console.error('Revenue Trend Error:', err);
+    res.status(500).json({ success: false, message: 'Error fetching revenue trend', error: err.message });
+  }
+};
+
+// 🏬 GET TOP PERFORMING STORES
+export const getTopStores = async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    
+    // Calculate total platform revenue
+    const totalPlatformRevenue = await calculateTotalRevenue();
+    
+    // Get top stores by revenue
+    const topStores = await orderModel.aggregate([
+      { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
+      { $group: { _id: "$storeId", revenue: { $sum: "$total" }, orderCount: { $sum: 1 } } },
+      {
+        $lookup: {
+          from: "stores",
+          localField: "_id",
+          foreignField: "_id",
+          as: "store",
+        },
+      },
+      { $unwind: "$store" },
+      {
+        $project: {
+          storeId: "$_id",
+          storeName: "$store.name",
+          storeUsername: "$store.username",
+          revenue: 1,
+          orderCount: 1,
+          contribution: {
+            $multiply: [
+              {
+                $divide: ["$revenue", totalPlatformRevenue || 1]
+              },
+              100
+            ]
+          }
+        },
+      },
+      { $sort: { revenue: -1 } },
+      { $limit: parseInt(limit) }
+    ]);
+
+    res.json({
+      success: true,
+      data: topStores
+    });
+  } catch (err) {
+    console.error('Top Stores Error:', err);
+    res.status(500).json({ success: false, message: 'Error fetching top stores', error: err.message });
+  }
+};
+
+// 📦 GET ORDER VOLUME BY DAY
+export const getOrderVolume = async (req, res) => {
+  try {
+    // Last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const orderVolume = await orderModel.aggregate([
+      { 
+        $match: { 
+          status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] },
+          createdAt: { $gte: thirtyDaysAgo } 
+        } 
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          count: 1
+        }
+      },
+      { $sort: { "date": 1 } }
+    ]);
+
+    res.json({
+      success: true,
+      data: orderVolume
+    });
+  } catch (err) {
+    console.error('Order Volume Error:', err);
+    res.status(500).json({ success: false, message: 'Error fetching order volume', error: err.message });
+  }
+};
+
+// 👥 GET CUSTOMER ACQUISITION TREND
+export const getCustomerTrend = async (req, res) => {
+  try {
+    // Last 12 months
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+    
+    const customerTrend = await userModel.aggregate([
+      { 
+        $match: { 
+          role: "user",
+          createdAt: { $gte: twelveMonthsAgo } 
+        } 
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m", date: "$createdAt" }
+          },
+          newCustomers: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          month: "$_id",
+          newCustomers: 1
+        }
+      },
+      { $sort: { "month": 1 } }
+    ]);
+
+    res.json({
+      success: true,
+      data: customerTrend
+    });
+  } catch (err) {
+    console.error('Customer Trend Error:', err);
+    res.status(500).json({ success: false, message: 'Error fetching customer trend', error: err.message });
+  }
+};
+
+// 📝 GET RECENT ACTIVITIES
+export const getRecentActivity = async (req, res) => {
+  try {
+    // Get recent activities from different collections
+    const recentOrders = await orderModel.find({ status: "DELIVERED" })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('userId', 'name email')
+      .populate('storeId', 'name');
+      
+    const recentStores = await storeModel.find({ status: "approved" })
+      .sort({ createdAt: -1 })
+      .limit(5);
+      
+    const recentProducts = await productModel.find()
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .populate('storeId', 'name');
+
+    // Format activities
+    const activities = [
+      ...recentOrders.map(order => ({
+        id: order._id,
+        type: "order_delivered",
+        title: `Order #${order._id.toString().substr(-6)} delivered`,
+        description: `Order delivered to ${order.userId?.name || 'Customer'} from ${order.storeId?.name || 'Store'}`,
+        timestamp: order.createdAt,
+        value: order.total
+      })),
+      ...recentStores.map(store => ({
+        id: store._id,
+        type: "new_store",
+        title: `New store approved`,
+        description: `Store "${store.name}" has been approved`,
+        timestamp: store.createdAt
+      })),
+      ...recentProducts.map(product => ({
+        id: product._id,
+        type: "new_product",
+        title: `New product added`,
+        description: `Product "${product.name}" added to ${product.storeId?.name || 'Store'}`,
+        timestamp: product.createdAt
+      }))
+    ];
+
+    // Sort by timestamp and take top 10
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const recentActivities = activities.slice(0, 10);
+
+    res.json({
+      success: true,
+      data: recentActivities
+    });
+  } catch (err) {
+    console.error('Recent Activity Error:', err);
+    res.status(500).json({ success: false, message: 'Error fetching recent activities', error: err.message });
+  }
+};

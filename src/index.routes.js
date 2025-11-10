@@ -22,7 +22,7 @@ export const allRoutes=(app)=>{
     app.use("/api",cartRouter)
     app.use("/api",router)
     app.use("/api",address)
-    app.use("/api/analytics", analyticsRouter)
+    app.use("/api", analyticsRouter)
     app.use("/api/reviews", reviewRouter)
   //  app.use("/api/v1",bannerRouter)
 

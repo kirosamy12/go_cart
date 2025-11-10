@@ -5,7 +5,13 @@ import {
   getSalesAnalytics,
   updateAnalytics,
   getProductAnalytics,
-  getAdvancedStoreAnalytics
+  getAdvancedStoreAnalytics,
+  getDashboardSummary,
+  getRevenueTrend,
+  getTopStores,
+  getOrderVolume,
+  getCustomerTrend,
+  getRecentActivity
 } from '../analytics/analytics.controler.js';
 import { protectRoutes, allowTo } from '../Auth/auth.controler.js';
 
@@ -28,5 +34,13 @@ router.get('/product/:productId', protectRoutes, allowTo('store'), getProductAna
 
 // 🔄 Update analytics (can be called manually or by cron)
 router.post('/update', protectRoutes, allowTo('admin'), updateAnalytics);
+
+// 📊 Admin Dashboard APIs (admin only)
+router.get('/admin/summary', protectRoutes, allowTo('admin'), getDashboardSummary);
+router.get('/admin/revenue-trend', protectRoutes, allowTo('admin'), getRevenueTrend);
+router.get('/admin/top-stores', protectRoutes, allowTo('admin'), getTopStores);
+router.get('/admin/order-volume', protectRoutes, allowTo('admin'), getOrderVolume);
+router.get('/admin/customer-trend', protectRoutes, allowTo('admin'), getCustomerTrend);
+router.get('/admin/recent-activity', protectRoutes, allowTo('admin'), getRecentActivity);
 
 export default router;
