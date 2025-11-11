@@ -282,10 +282,12 @@ export const getStoresByUserId = async (req, res) => {
         userId: req.params.userId,
         error: error.message,
         timestamp: new Date().toISOString()
-      }})}}
+      }
+    });
+  }
+}
 
-
-      // 4. GET ALL STORES
+// 4. GET ALL STORES
 export const getAllStores = async (req, res) => {
   try {
     const { includeInactive = 'false' } = req.query;
@@ -333,13 +335,26 @@ export const getAllStores = async (req, res) => {
 export const updateStoreStatus = async (req, res) => {
   try {
     const { storeId } = req.params;
-    const { action } = req.body; // 'approve' or 'reject'
-
-    if (!['approve', 'reject'].includes(action)) {
+    const { action, status } = req.body; // Accept both action and status parameters
+    
+    // Support both formats: action ("approve"/"reject") and status ("approved"/"rejected")
+    let storeAction = action;
+    
+    // If status is provided instead of action, convert it
+    if (!action && status) {
+      if (status === 'approved') {
+        storeAction = 'approve';
+      } else if (status === 'rejected') {
+        storeAction = 'reject';
+      }
+    }
+    
+    // Validate the action
+    if (!['approve', 'reject'].includes(storeAction)) {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: 'Action must be either "approve" or "reject"',
+        message: 'Action must be either "approve" or "reject", or status must be either "approved" or "rejected"',
       });
     }
 
@@ -353,10 +368,10 @@ export const updateStoreStatus = async (req, res) => {
       });
     }
 
-    if (action === 'approve') {
+    if (storeAction === 'approve') {
       store.status = 'approved';
       store.isActive = true;
-    } else if (action === 'reject') {
+    } else if (storeAction === 'reject') {
       store.status = 'rejected';
       store.isActive = false;
     }
@@ -364,7 +379,7 @@ export const updateStoreStatus = async (req, res) => {
     await store.save();
 
     // ✅ Send email notification to store owner when approved
-    if (action === 'approve') {
+    if (storeAction === 'approve') {
       try {
         // Get the store owner's user information
         const storeOwner = await userModel.findOne({ id: store.userId });
@@ -402,7 +417,7 @@ export const updateStoreStatus = async (req, res) => {
 
     return res.json({
       success: true,
-      message: `Store has been ${action}d successfully.`,
+      message: `Store has been ${storeAction}d successfully.`,
       store: {
         id: store.id,
         name: store.name,
