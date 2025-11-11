@@ -31,9 +31,9 @@ router.put('/updateAddress/:id', updateAddress);
 router.get('/shipping-cost/:governorate', getShippingCost);
 
 // GET /api/addresses/shipping-costs (admin only)
-router.get('/shipping-costs', protectRoutes, allowTo('admin'), getAllShippingCosts);
+router.get('/admin/shipping-costs', protectRoutes, allowTo('admin'), getAllShippingCosts);
 
 // PUT /api/addresses/shipping-cost (admin only)
-router.put('/admin/shipping-cost', protectRoutes, allowTo('admin'), updateShippingCost);
+router.put('/shipping-cost', protectRoutes, allowTo('admin'), updateShippingCost);
 
 export default router;
