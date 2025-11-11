@@ -34,6 +34,6 @@ router.get('/shipping-cost/:governorate', getShippingCost);
 router.get('/shipping-costs', protectRoutes, allowTo('admin'), getAllShippingCosts);
 
 // PUT /api/addresses/shipping-cost (admin only)
-router.put('/shipping-cost', protectRoutes, allowTo('admin'), updateShippingCost);
+router.put('/admin/shipping-cost', protectRoutes, allowTo('admin'), updateShippingCost);
 
 export default router;
