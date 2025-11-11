@@ -248,12 +248,47 @@ export const createOrder = async (req, res) => {
 // ✅ GET USER ORDERS (مع الألوان)
 export const getUserOrders = async (req, res) => {
   try {
+    // Debug logging to see what's in req.user
+    console.log('getUserOrders called. req.user:', req.user);
+    
+    // Check if user is authenticated
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    // Handle both _id and id for user identification
+    let userId;
+    if (req.user._id) {
+      // If _id exists (MongoDB ObjectId), use it directly for querying
+      userId = req.user._id;
+    } else if (req.user.id) {
+      // If only id exists (string), we need to find the user's ObjectId
+      const user = await userModel.findOne({ id: req.user.id.toString() });
+      if (!user) {
+        return res.status(400).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      userId = user._id;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID not found in request'
+      });
+    }
+
     const { page = 1, limit = 10, status } = req.query;
-    const userId = req.user._id.toString();
     const skip = (page - 1) * limit;
 
-    const query = { userId };
+    // Query with the correct userId type (ObjectId)
+    const query = { userId: userId };
     if (status) query.status = status;
+
+    console.log('Fetching orders with query:', query);
 
     const [orders, total] = await Promise.all([
       orderModel.find(query)
@@ -266,6 +301,8 @@ export const getUserOrders = async (req, res) => {
 
       orderModel.countDocuments(query)
     ]);
+
+    console.log('Found orders:', orders.length);
 
     res.json({
       success: true,
@@ -282,17 +319,22 @@ export const getUserOrders = async (req, res) => {
         store: order.storeId,
         address: order.addressId,
 
-        orderItems: order.orderItems.map(item => ({
-          product: {
-            id: item.productId.id,
-            name: item.productId.name,
-            images: item.productId.images,
-            colors: item.productId.colors // ← الألوان المتاحة
-          },
-          quantity: item.quantity,
-          price: item.price,
-          selectedColor: item.selectedColor // ← اللون المختار
-        }))
+        orderItems: order.orderItems.map(item => {
+          // Add safety checks for product data
+          const productData = {
+            id: item.productId?.id || null,
+            name: item.productId?.name || 'Unknown Product',
+            images: item.productId?.images || [],
+            colors: item.productId?.colors || []
+          };
+          
+          return {
+            product: productData,
+            quantity: item.quantity,
+            price: item.price,
+            selectedColor: item.selectedColor
+          };
+        })
       })),
 
       pagination: {
@@ -305,9 +347,31 @@ export const getUserOrders = async (req, res) => {
 
   } catch (error) {
     console.error('❌ Get user orders error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    
+    // More specific error messages
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+    
+    if (error.name === 'MongoServerError') {
+      return res.status(500).json({
+        success: false,
+        message: 'Database error while fetching orders'
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Something went wrong while fetching orders'
+      message: 'Something went wrong while fetching orders',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -868,9 +932,30 @@ export const getMyOrders = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
     const skip = (page - 1) * limit;
-    const userId = req.user._id.toString();
+    
+    // Handle user ID correctly for querying orders
+    let userId;
+    if (req.user._id) {
+      // If _id exists (MongoDB ObjectId), use it directly for querying
+      userId = req.user._id;
+    } else if (req.user.id) {
+      // If only id exists (string), convert to ObjectId for querying
+      const user = await userModel.findOne({ id: req.user.id.toString() });
+      if (!user) {
+        return res.status(400).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      userId = user._id;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID not found in request'
+      });
+    }
 
-    const query = { userId };
+    const query = { userId: userId };
     if (status) query.status = status;
 
     const [orders, total] = await Promise.all([
@@ -1838,13 +1923,12 @@ export const getAllSuccessfulOrders = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
-    // Get all delivered and paid orders
+    // Get delivered and paid orders for the user
     const [orders, total] = await Promise.all([
       orderModel.find({ 
         status: 'DELIVERED', 
         isPaid: true 
       })
-        .populate('userId', 'id name email')
         .populate('storeId', 'id name username logo')
         .populate('addressId', 'street city state country phone')
         .populate('orderItems.productId', 'id name images price colors sizes')
@@ -1868,12 +1952,6 @@ export const getAllSuccessfulOrders = async (req, res) => {
         isPaid: order.isPaid,
         createdAt: order.createdAt,
         deliveredAt: order.updatedAt, // Assuming updatedAt is when it was delivered
-
-        customer: {
-          id: order.userId?.id,
-          name: order.userId?.name,
-          email: order.userId?.email
-        },
 
         store: order.storeId,
         address: order.addressId,
@@ -1910,3 +1988,5 @@ export const getAllSuccessfulOrders = async (req, res) => {
     });
   }
 };
+
+// End of file
