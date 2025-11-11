@@ -12,6 +12,6 @@ authRouter.put('/stores/:storeId/status', protectRoutes,allowTo("admin"), update
 authRouter.get('/admin/stores/pending', protectRoutes,allowTo("admin"),getPendingStores);
 authRouter.get("/admin/users", protectRoutes,allowTo("admin"), getAllUsers);
 authRouter.get("/admin/getUser/:id", protectRoutes,allowTo("admin"), getUserById);
-authRouter.patch("/updateUserRole/:id", protectRoutes,allowTo("admin"), updateUserRole);
+authRouter.put("/updateUserRole/:id", protectRoutes,allowTo("admin"), updateUserRole);
   
 export default authRouter; 
