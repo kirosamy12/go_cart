@@ -10,7 +10,7 @@ authRouter.get("/getAllStores",getAllStores)
 authRouter.get("/:username",getStoreByUsername)
 authRouter.put('/stores/:storeId/status', protectRoutes,allowTo("admin"), updateStoreStatus);
 authRouter.get('/admin/stores/pending', protectRoutes,allowTo("admin"),getPendingStores);
-authRouter.get("/admin/getAllUsers", protectRoutes,allowTo("admin"), getAllUsers);
+authRouter.get("/admin/users", protectRoutes,allowTo("admin"), getAllUsers);
 authRouter.get("/admin/getUser/:id", protectRoutes,allowTo("admin"), getUserById);
 authRouter.patch("/updateUserRole/:id", protectRoutes,allowTo("admin"), updateUserRole);
   

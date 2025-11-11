@@ -1,6 +1,7 @@
 import storeModel from "../../../DB/models/store.model.js";
 import userModel from "../../../DB/models/user.model.js";
 import sendEmail from "../../utils/sendEmail.js";
+import productModel from "../../../DB/models/products.model.js";
 
 
 
@@ -299,6 +300,19 @@ export const getAllStores = async (req, res) => {
 
     const stores = await storeModel.find(query);
 
+    // Get product counts for each store
+    const storeIds = stores.map(store => store._id);
+    const productCounts = await productModel.aggregate([
+      { $match: { storeId: { $in: storeIds } } },
+      { $group: { _id: "$storeId", productCount: { $sum: 1 } } }
+    ]);
+
+    // Create a map of storeId to product count
+    const productCountMap = {};
+    productCounts.forEach(item => {
+      productCountMap[item._id.toString()] = item.productCount;
+    });
+
     res.json({
       success: true,
       count: stores.length,
@@ -313,6 +327,7 @@ export const getAllStores = async (req, res) => {
         logo: store.logo,
         status: store.status,
         isActive: store.isActive,
+        productCount: productCountMap[store._id.toString()] || 0, // Add product count
         createdAt: store.createdAt,
       }))
     });
