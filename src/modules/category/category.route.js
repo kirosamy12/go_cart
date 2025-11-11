@@ -14,7 +14,7 @@ const router = express.Router();
 
 // POST /api/categories
 router.post('/createCategory',protectRoutes,allowTo('admin'),uploadSingle('image'), createCategory);
-
+ 
 // GET /api/categories
 router.get('/getAllCategories', getAllCategories);
 
