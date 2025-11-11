@@ -1,109 +1,128 @@
 import multer from "multer";
-import cloudinary from 'cloudinary';
+import cloudinary from "cloudinary";
 const { v2: cloudinaryInstance } = cloudinary;
 import { AppError } from "../utils/appError.js";
 
+// ✅ إعداد Cloudinary
 cloudinary.config({
   cloud_name: "dxvynre0v",
   api_key: "351626516951211",
   api_secret: "xN5iZjmsFAN0bGf528K1JsI3myk",
 });
 
+// ✅ إعداد التخزين المؤقت
 const storage = multer.diskStorage({});
 
-// Create a custom multer instance that accepts array notation
-const arrayFields = (fieldsConfig) => {
-  return (req, res, next) => {
-    const upload = multer({ storage }).fields([
-      { name: "imageCover", maxCount: 1 },
-      ...Array(10).fill().map((_, i) => ({ 
-        name: `images[${i}]`, 
-        maxCount: 1 
-      }))
-    ]);
+// ✅ إنشاء instance من multer مع حدود حجم الملف
+const createMulter = () =>
+  multer({
+    storage,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB لكل ملف
+  });
 
-    upload(req, res, async (err) => {
+/* ===========================================================
+   🖼️ دالة رفع صورة واحدة
+   =========================================================== */
+export const uploadSingle = (fieldName) => {
+  const upload = createMulter();
+
+  return async (req, res, next) => {
+    upload.single(fieldName)(req, res, async (err) => {
       if (err) return next(new AppError(err.message, 400));
+      if (!req.file) return next(new AppError("No file uploaded", 400));
 
       try {
-        // Handle imageCover
-        if (req.files.imageCover) {
-          const coverUploadResult = await cloudinary.uploader.upload(
-            req.files.imageCover[0].path
-          );
-          req.body.imageCover = coverUploadResult.secure_url;
-        }
+        const result = await cloudinary.uploader.upload(req.file.path, {
+          folder: "products",
+          transformation: [{ quality: "auto:good", fetch_format: "auto" }],
+        });
 
-        // Handle array-style images
-        const imageFiles = Object.entries(req.files)
-          .filter(([key]) => key.startsWith('images['))
-          .sort((a, b) => {
-            const aIndex = parseInt(a[0].match(/\[(\d+)\]/)[1]);
-            const bIndex = parseInt(b[0].match(/\[(\d+)\]/)[1]);
-            return aIndex - bIndex;
-          })
-          .map(([_, files]) => files[0]);
-
-        if (imageFiles.length > 0) {
-          const imagesResults = await Promise.all(
-            imageFiles.map(file => cloudinary.uploader.upload(file.path))
-          );
-          req.body.images = imagesResults.map(result => result.secure_url);
-        }
-
+        req.body.image = result.secure_url;
         next();
       } catch (error) {
-        next(new AppError("Error processing upload", 400));
+        console.error("Cloudinary Upload Error:", error);
+        next(new AppError("Error uploading image to Cloudinary", 500));
       }
     });
   };
 };
 
-export const handleFileUpload = (uploadType, fieldName, fieldsConfig) => {
-  if (uploadType === "fields") {
-    return arrayFields(fieldsConfig);
-  }
+/* ===========================================================
+   🖼️ دالة رفع مجموعة صور (array)
+   =========================================================== */
+export const uploadArray = (fieldName) => {
+  const upload = createMulter();
 
-  const upload = multer({ storage });
-  
   return async (req, res, next) => {
-    try {
-      const uploader = getUploader(upload, uploadType, fieldName);
-      
-      await uploader(req, res, async (err) => {
-        if (err) return next(new AppError(err.message, 400));
+    upload.array(fieldName, 10)(req, res, async (err) => {
+      if (err) return next(new AppError(err.message, 400));
+      if (!req.files || req.files.length === 0)
+        return next(new AppError("No images provided", 400));
 
-        if (uploadType === "single" && req.file) {
-          const uploadResult = await cloudinary.uploader.upload(req.file.path);
-          req.body.image = uploadResult.secure_url;
-        } else if (uploadType === "array" && req.files) {
-          const uploadResults = await Promise.all(
-            req.files.map((file) => cloudinary.uploader.upload(file.path))
-          );
-          req.body.images = uploadResults.map((result) => result.secure_url);
-        } else {
-          return next(new AppError("No valid files provided for upload.", 400));
-        }
-        
+      try {
+        const results = await Promise.all(
+          req.files.map((file) =>
+            cloudinary.uploader.upload(file.path, {
+              folder: "products",
+              transformation: [{ quality: "auto:good", fetch_format: "auto" }],
+            })
+          )
+        );
+
+        req.body.images = results.map((r) => r.secure_url);
         next();
-      });
-    } catch (error) {
-      next(error);
-    }
+      } catch (error) {
+        console.error("Cloudinary Upload Error:", error);
+        next(new AppError("Error uploading images to Cloudinary", 500));
+      }
+    });
   };
 };
 
-const getUploader = (upload, uploadType, fieldName) => {
-  switch (uploadType) {
-    case "single":
-      return upload.single(fieldName);
-    case "array":
-      return upload.array(fieldName, 10);
-    default:
-      throw new AppError("Invalid upload type.", 400);
-  }
-};
+/* ===========================================================
+   🖼️ دالة رفع حقول متعددة (زي imageCover + images[])
+   =========================================================== */
+export const uploadFields = () => {
+  const upload = createMulter();
 
-export const uploadSingle = (fieldName) => handleFileUpload("single", fieldName);
-export const uploadArray = (fieldName) => handleFileUpload("array", fieldName);
-export const uploadFields = (fieldsConfig) => handleFileUpload("fields", null, fieldsConfig);
+  return async (req, res, next) => {
+    upload.fields([
+      { name: "imageCover", maxCount: 1 },
+      { name: "images", maxCount: 10 },
+    ])(req, res, async (err) => {
+      if (err) return next(new AppError(err.message, 400));
+
+      try {
+        // رفع صورة الغلاف
+        if (req.files.imageCover) {
+          const cover = req.files.imageCover[0];
+          const uploadCover = await cloudinary.uploader.upload(cover.path, {
+            folder: "products",
+            transformation: [{ quality: "auto:good", fetch_format: "auto" }],
+          });
+          req.body.imageCover = uploadCover.secure_url;
+        }
+
+        // رفع باقي الصور
+        if (req.files.images && req.files.images.length > 0) {
+          const results = await Promise.all(
+            req.files.images.map((file) =>
+              cloudinary.uploader.upload(file.path, {
+                folder: "products",
+                transformation: [
+                  { quality: "auto:good", fetch_format: "auto" },
+                ],
+              })
+            )
+          );
+          req.body.images = results.map((r) => r.secure_url);
+        }
+
+        next();
+      } catch (error) {
+        console.error("Cloudinary Upload Error:", error);
+        next(new AppError("Error uploading images to Cloudinary", 500));
+      }
+    });
+  };
+};
