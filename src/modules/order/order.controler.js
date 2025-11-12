@@ -793,6 +793,230 @@ export const updateOrderStatus = async (req, res) => {
 };
 
 
+// ✅ GET ALL STORES WITH ORDERS FOR ADMIN
+export const getAllStoresWithOrders = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, status, storeStatus } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Build store filter
+    const storeFilter = {};
+    if (storeStatus) storeFilter.status = storeStatus;
+
+    // Get all stores with pagination
+    const [stores, totalStores] = await Promise.all([
+      storeModel.find(storeFilter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit, 10))
+        .lean(),
+      storeModel.countDocuments(storeFilter)
+    ]);
+
+    // Get store IDs
+    const storeIds = stores.map(store => store._id);
+
+    // Build order filter
+    const orderFilter = { storeId: { $in: storeIds } };
+    if (status) orderFilter.status = status;
+
+    // Get orders for these stores
+    const orders = await orderModel.find(orderFilter)
+      .populate('userId', 'id name email')
+      .populate('storeId', 'id name username')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Group orders by store
+    const ordersByStore = {};
+    orders.forEach(order => {
+      const storeId = order.storeId._id.toString();
+      if (!ordersByStore[storeId]) {
+        ordersByStore[storeId] = [];
+      }
+      ordersByStore[storeId].push({
+        id: order.id,
+        total: order.total,
+        status: order.status,
+        isPaid: order.isPaid,
+        paymentMethod: order.paymentMethod,
+        createdAt: order.createdAt,
+        customer: {
+          id: order.userId?.id,
+          name: order.userId?.name,
+          email: order.userId?.email
+        }
+      });
+    });
+
+    // Format response
+    const result = stores.map(store => ({
+      id: store.id,
+      name: store.name,
+      username: store.username,
+      email: store.email,
+      status: store.status,
+      isActive: store.isActive,
+      createdAt: store.createdAt,
+      orders: ordersByStore[store._id.toString()] || [],
+      ordersCount: ordersByStore[store._id.toString()] ? ordersByStore[store._id.toString()].length : 0
+    }));
+
+    res.json({
+      success: true,
+      stores: result,
+      pagination: {
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        total: totalStores,
+        pages: Math.ceil(totalStores / limit)
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get all stores with orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong while fetching stores and orders'
+    });
+  }
+};
+
+// ✅ UPDATE ORDER STATUS AS ADMIN (NOT AS STORE OWNER)
+export const updateOrderStatusAsAdmin = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status is required'
+      });
+    }
+
+    const validStatuses = ["ORDER_PLACED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"];
+    
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Valid statuses are: ${validStatuses.join(', ')}`
+      });
+    }
+
+    // Find the order by ID with populated data
+    const order = await orderModel.findOne({ id: orderId })
+      .populate('userId', 'id name email')
+      .populate('storeId', 'id name username email');
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    // Save old status for reference
+    const oldStatus = order.status;
+
+    // Update order status
+    order.status = status;
+    
+    // When order is delivered, payment status should be changed to paid
+    if (status === 'DELIVERED') {
+      order.isPaid = true;
+    }
+    
+    // When order is cancelled, keep payment status as is (business logic may vary)
+    if (status === 'CANCELLED') {
+      // Optionally handle cancellation logic here
+    }
+
+    await order.save();
+
+    // Send email notifications
+    try {
+      // Notify customer
+      if (order.userId && order.userId.email) {
+        await sendEmail({
+          to: order.userId.email,
+          subject: `Order Status Updated - ${order.id}`,
+          html: `
+            <h2>Order Status Update</h2>
+            <p>Dear ${order.userId.name},</p>
+            <p>The status of your order #${order.id} has been updated by admin.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${order.id}</li>
+              <li>Old Status: ${oldStatus}</li>
+              <li>New Status: ${order.status}</li>
+              <li>Total Amount: $${order.total}</li>
+              <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
+            </ul>
+            <p>Thank you for shopping with us!</p>
+          `
+        });
+      }
+
+      // Notify store
+      if (order.storeId && order.storeId.email) {
+        await sendEmail({
+          to: order.storeId.email,
+          subject: `Order Status Updated by Admin - ${order.id}`,
+          html: `
+            <h2>Order Status Update</h2>
+            <p>Hello ${order.storeId.name},</p>
+            <p>The status of order #${order.id} has been updated by admin.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${order.id}</li>
+              <li>Old Status: ${oldStatus}</li>
+              <li>New Status: ${order.status}</li>
+              <li>Total Amount: $${order.total}</li>
+              <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
+            </ul>
+          `
+        });
+      }
+    } catch (emailError) {
+      console.error("❌ Error sending status update emails:", emailError);
+      // Don't fail the status update if email sending fails
+    }
+
+    // Send response
+    res.json({
+      success: true,
+      message: 'Order status updated successfully',
+      order: {
+        id: order.id,
+        oldStatus,
+        newStatus: order.status,
+        isPaid: order.isPaid,
+        total: order.total,
+        customer: {
+          id: order.userId?.id,
+          name: order.userId?.name,
+          email: order.userId?.email
+        },
+        store: {
+          id: order.storeId?.id,
+          name: order.storeId?.name,
+          username: order.storeId?.username
+        },
+        updatedAt: order.updatedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Update order status as admin error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong while updating order status'
+    });
+  }
+};
+
+
 // ✅ GET ORDER TRACKING (مع الألوان)
 export const getOrderTracking = async (req, res) => {
   try {
@@ -1923,18 +2147,18 @@ export const getAllSuccessfulOrders = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
-    // Get delivered and paid orders for the user
+    // Get all delivered and paid orders
     const [orders, total] = await Promise.all([
       orderModel.find({ 
         status: 'DELIVERED', 
         isPaid: true 
       })
-        .populate('storeId', 'id name username logo')
-        .populate('addressId', 'street city state country phone')
-        .populate('orderItems.productId', 'id name images price colors sizes')
+        .populate('userId', 'id name email phone')
+        .populate('storeId', 'id name username')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(parseInt(limit, 10)),
+        .limit(parseInt(limit, 10))
+        .lean(),
 
       orderModel.countDocuments({ 
         status: 'DELIVERED', 
@@ -1953,23 +2177,18 @@ export const getAllSuccessfulOrders = async (req, res) => {
         createdAt: order.createdAt,
         deliveredAt: order.updatedAt, // Assuming updatedAt is when it was delivered
 
-        store: order.storeId,
-        address: order.addressId,
-
-        orderItems: order.orderItems.map(item => ({
-          product: {
-            id: item.productId.id,
-            name: item.productId.name,
-            images: item.productId.images,
-            price: item.productId.price,
-            colors: item.productId.colors,
-            sizes: item.productId.sizes
-          },
-          quantity: item.quantity,
-          price: item.price,
-          selectedColor: item.selectedColor,
-          selectedSize: item.selectedSize
-        }))
+        customer: {
+          id: order.userId?.id,
+          name: order.userId?.name,
+          email: order.userId?.email,
+          phone: order.userId?.phone
+        },
+        
+        store: {
+          id: order.storeId?.id,
+          name: order.storeId?.name,
+          username: order.storeId?.username
+        }
       })),
 
       pagination: {
@@ -1988,5 +2207,7 @@ export const getAllSuccessfulOrders = async (req, res) => {
     });
   }
 };
+
+
 
 // End of file
