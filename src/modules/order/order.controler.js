@@ -1869,6 +1869,9 @@ export const getAdminDashboard = async (req, res) => {
     // 🧾 Total Orders
     const totalOrders = await orderModel.countDocuments();
 
+    // 📦 Total Products
+    const totalProducts = await productModel.countDocuments();
+
     // 💰 Store Revenue Comparison
     const storeRevenues = await orderModel.aggregate([
       { $match: { status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] } } },
@@ -1950,6 +1953,7 @@ export const getAdminDashboard = async (req, res) => {
         totalStores,
         totalUsers,
         totalOrders,
+        totalProducts,
         totalRevenue,
         storeRevenues,
         topStore,
