@@ -700,8 +700,8 @@ export const getAllStoresWithOrders = async (req, res) => {
 
     // Get orders for these stores
     const orders = await orderModel.find(orderFilter)
-      .populate('userId', 'id name email')
-      .populate('storeId', 'id name username')
+      .populate('userId', 'id name email ')
+      .populate('storeId', 'id name username contact logo')
       .sort({ createdAt: -1 })
       .lean();
 
