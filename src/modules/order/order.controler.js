@@ -1906,6 +1906,44 @@ export const getAdminDashboard = async (req, res) => {
       { $sort: { "_id": 1 } },
     ]);
 
+    // 🏪 Store Information with Product Counts
+    const storesWithProducts = await storeModel.aggregate([
+      {
+        $lookup: {
+          from: "products",
+          localField: "_id",
+          foreignField: "storeId",
+          as: "products",
+        },
+      },
+      {
+        $project: {
+          id: 1,
+          name: 1,
+          username: 1,
+          email: 1,
+          status: 1,
+          isActive: 1,
+          createdAt: 1,
+          productCount: { $size: "$products" },
+          products: {
+            $slice: ["$products", 5] // Limit to first 5 products for preview
+          }
+        },
+      },
+      { $sort: { createdAt: -1 } },
+    ]);
+
+    // 📊 Store Status Statistics
+    const storeStatusStats = await storeModel.aggregate([
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
     res.json({
       success: true,
       data: {
@@ -1916,6 +1954,11 @@ export const getAdminDashboard = async (req, res) => {
         storeRevenues,
         topStore,
         monthlyRevenue,
+        storesWithProducts: {
+          count: storesWithProducts.length,
+          stores: storesWithProducts
+        },
+        storeStatusStats
       },
     });
   } catch (err) {
