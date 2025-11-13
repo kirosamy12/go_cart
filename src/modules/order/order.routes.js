@@ -24,7 +24,9 @@ getMyOrders,
    getStoreInvoiceById,
    // New admin functions
    getAllStoresWithOrders,
-   updateOrderStatusAsAdmin
+   updateOrderStatusAsAdmin,
+   getAdminStoreOrders,
+   updateStoreOrderStatusByAdmin
 } from '../order/order.controler.js';
 import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js';
 
@@ -71,6 +73,8 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
 
  // New admin routes
  router.get("/admin/stores-with-orders", protectRoutes, allowTo("admin"), getAllStoresWithOrders);
+ router.get("/admin/stores/:storeId/orders", protectRoutes, allowTo("admin"), getAdminStoreOrders);
+ router.put("/admin/stores/:storeId/orders/:orderId/status", protectRoutes, allowTo("admin"), updateStoreOrderStatusByAdmin);
  router.put("/admin/order/:orderId/status", protectRoutes, allowTo("admin"), updateOrderStatusAsAdmin);
 
  router.get("/admin/dashboard", protectRoutes, allowTo("admin"), getAdminDashboard);
