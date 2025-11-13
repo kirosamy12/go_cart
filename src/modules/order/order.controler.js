@@ -1044,8 +1044,8 @@ export const getAdminStoreOrders = async (req, res) => {
     const { page = 1, limit = 10, status } = req.query;
     const skip = (page - 1) * limit;
 
-    // Find the store
-    const store = await storeModel.findById(storeId);
+    // Find the store by its string id field
+    const store = await storeModel.findOne({ id: storeId });
     if (!store) {
       return res.status(404).json({
         success: false,
@@ -1053,8 +1053,8 @@ export const getAdminStoreOrders = async (req, res) => {
       });
     }
 
-    // Build order filter
-    const orderFilter = { storeId: storeId };
+    // Build order filter using the store's MongoDB _id
+    const orderFilter = { storeId: store._id };
     if (status) orderFilter.status = status;
 
     // Get orders for this specific store with full details
@@ -1142,6 +1142,7 @@ export const getAdminStoreOrders = async (req, res) => {
   }
 };
 
+
 // ✅ UPDATE STORE ORDER STATUS BY ADMIN
 export const updateStoreOrderStatusByAdmin = async (req, res) => {
   try {
@@ -1164,8 +1165,8 @@ export const updateStoreOrderStatusByAdmin = async (req, res) => {
       });
     }
 
-    // Find the store
-    const store = await storeModel.findById(storeId);
+    // Find the store by its string id field
+    const store = await storeModel.findOne({ id: storeId });
     if (!store) {
       return res.status(404).json({
         success: false,
@@ -1173,8 +1174,8 @@ export const updateStoreOrderStatusByAdmin = async (req, res) => {
       });
     }
 
-    // Find the order by ID with populated data
-    const order = await orderModel.findOne({ id: orderId, storeId: storeId })
+    // Find the order by ID with populated data, matching the store's MongoDB _id
+    const order = await orderModel.findOne({ id: orderId, storeId: store._id })
       .populate('userId', 'id name email')
       .populate('storeId', 'id name username email');
     
