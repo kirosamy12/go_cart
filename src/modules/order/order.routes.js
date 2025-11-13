@@ -26,7 +26,8 @@ getMyOrders,
    getAllStoresWithOrders,
    updateOrderStatusAsAdmin,
    getAdminStoreOrders,
-   updateStoreOrderStatusByAdmin
+   updateStoreOrderStatusByAdmin,
+   getCompleteOrderDetails
 } from '../order/order.controler.js';
 import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js';
 
@@ -75,6 +76,7 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get("/admin/stores-with-orders", protectRoutes, allowTo("admin"), getAllStoresWithOrders);
  router.get("/admin/stores/:storeId/orders", protectRoutes, allowTo("admin"), getAdminStoreOrders);
  router.put("/admin/stores/:storeId/orders/:orderId/status", protectRoutes, allowTo("admin"), updateStoreOrderStatusByAdmin);
+ router.get("/admin/orders/:orderId/details", protectRoutes, allowTo("admin"), getCompleteOrderDetails);
  router.put("/admin/order/:orderId/status", protectRoutes, allowTo("admin"), updateOrderStatusAsAdmin);
 
  router.get("/admin/dashboard", protectRoutes, allowTo("admin"), getAdminDashboard);

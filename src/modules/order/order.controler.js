@@ -629,17 +629,154 @@ export const updateOrderStatus = async (req, res) => {
                     <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
                   </ul>
                   <p>Please review this update in the admin panel.</p>
-                `
+                `,
               });
-            } catch (emailError) {
-              console.error(`❌ Error sending email to admin ${admin.email}:`, emailError);
+              console.log(`📧 Order status update email sent to admin: ${admin.email}`);
+            } catch (adminEmailError) {
+              console.error(`❌ Error sending status update email to admin ${admin.email}:`, adminEmailError);
             }
           }
         }
-        console.log(`📧 Status update emails sent successfully to ${adminUsers.length} admin(s)`);
       }
     } catch (emailError) {
-      console.error("❌ Error sending status update emails to admins:", emailError);
+      console.error("❌ Error sending status update email notifications:", emailError);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Order status updated successfully",
+      order: {
+        id: order.id,
+        total: order.total,
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        isPaid: order.isPaid,
+        isCouponUsed: order.isCouponUsed,
+        coupon: order.coupon,
+        createdAt: order.createdAt,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error updating order status:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
+
+// ✅ UPDATE STORE ORDER STATUS BY ADMIN
+export const updateStoreOrderStatusByAdmin = async (req, res) => {
+  try {
+    const { storeId, orderId } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status is required'
+      });
+    }
+
+    // Admins can update to any valid status
+    const validStatuses = ["ORDER_PLACED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"];
+    
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Valid statuses are: ${validStatuses.join(', ')}`
+      });
+    }
+
+    // Find the store by its string id field
+    const store = await storeModel.findOne({ id: storeId });
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        message: 'Store not found'
+      });
+    }
+
+    // Find the order by ID with populated data, matching the store's MongoDB _id
+    const order = await orderModel.findOne({ id: orderId, storeId: store._id })
+      .populate('userId', 'id name email')
+      .populate('storeId', 'id name username email');
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found or does not belong to this store'
+      });
+    }
+
+    // Save old status for reference
+    const oldStatus = order.status;
+
+    // Update order status
+    order.status = status;
+    
+    // When order is delivered, payment status should be changed to paid
+    if (status === 'DELIVERED') {
+      order.isPaid = true;
+    }
+    
+    // When order is cancelled, keep payment status as is (business logic may vary)
+    if (status === 'CANCELLED') {
+      // Optionally handle cancellation logic here
+    }
+
+    await order.save();
+
+    // Send email notifications
+    try {
+      // Notify customer
+      if (order.userId && order.userId.email) {
+        await sendEmail({
+          to: order.userId.email,
+          subject: `Order Status Updated - ${order.id}`,
+          html: `
+            <h2>Order Status Update</h2>
+            <p>Dear ${order.userId.name},</p>
+            <p>The status of your order #${order.id} has been updated by admin.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${order.id}</li>
+              <li>Store: ${order.storeId.name}</li>
+              <li>Old Status: ${oldStatus}</li>
+              <li>New Status: ${order.status}</li>
+              <li>Total Amount: $${order.total}</li>
+              <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
+            </ul>
+            <p>Thank you for shopping with us!</p>
+          `
+        });
+      }
+
+      // Notify store
+      if (order.storeId && order.storeId.email) {
+        await sendEmail({
+          to: order.storeId.email,
+          subject: `Order Status Updated by Admin - ${order.id}`,
+          html: `
+            <h2>Order Status Update</h2>
+            <p>Hello ${order.storeId.name},</p>
+            <p>The status of order #${order.id} has been updated by admin.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${order.id}</li>
+              <li>Customer: ${order.userId?.name}</li>
+              <li>Old Status: ${oldStatus}</li>
+              <li>New Status: ${order.status}</li>
+              <li>Total Amount: $${order.total}</li>
+              <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
+            </ul>
+          `
+        });
+      }
+    } catch (emailError) {
+      console.error("❌ Error sending status update emails:", emailError);
       // Don't fail the status update if email sending fails
     }
 
@@ -651,21 +788,152 @@ export const updateOrderStatus = async (req, res) => {
         id: order.id,
         oldStatus,
         newStatus: order.status,
+        isPaid: order.isPaid,
         total: order.total,
+        customer: {
+          id: order.userId?.id,
+          name: order.userId?.name,
+          email: order.userId?.email
+        },
         store: {
-          id: store.id,
-          name: store.name,
-          username: store.username
+          id: order.storeId?.id,
+          name: order.storeId?.name,
+          username: order.storeId?.username
         },
         updatedAt: order.updatedAt
       }
     });
 
   } catch (error) {
-    console.error('❌ Update order status error:', error);
+    console.error('❌ Update store order status by admin error:', error);
     res.status(500).json({
       success: false,
       message: 'Something went wrong while updating order status'
+    });
+  }
+};
+
+
+// ✅ GET COMPLETE ORDER DETAILS FOR ADMIN
+export const getCompleteOrderDetails = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: "Order ID is required"
+      });
+    }
+
+    // Find the order with all possible populated data
+    const order = await orderModel.findOne({ id: orderId })
+      .populate('userId', 'id name email phone createdAt')
+      .populate('storeId', 'id name username logo email contact address status isActive createdAt')
+      .populate('addressId', 'name email street city state zip country phone')
+      .populate('orderItems.productId', 'id name images price colors sizes description category');
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
+    }
+
+    // Get additional analytics data
+    const orderItemCount = order.orderItems.reduce((total, item) => total + item.quantity, 0);
+    
+    // Calculate item-level totals
+    const orderItemsWithTotals = order.orderItems.map(item => ({
+      product: {
+        id: item.productId.id,
+        name: item.productId.name,
+        images: item.productId.images,
+        price: item.productId.price,
+        colors: item.productId.colors,
+        sizes: item.productId.sizes,
+        description: item.productId.description,
+        category: item.productId.category
+      },
+      quantity: item.quantity,
+      unitPrice: item.price,
+      selectedColor: item.selectedColor,
+      selectedSize: item.selectedSize,
+      lineTotal: item.price * item.quantity
+    }));
+
+    // Calculate order analytics
+    const subtotal = orderItemsWithTotals.reduce((total, item) => total + item.lineTotal, 0);
+    const discountAmount = order.coupon && order.coupon.discount ? (subtotal * order.coupon.discount / 100) : 0;
+    const finalTotal = subtotal - discountAmount;
+
+    res.json({
+      success: true,
+      order: {
+        id: order.id,
+        total: order.total,
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        isPaid: order.isPaid,
+        isCouponUsed: order.isCouponUsed,
+        coupon: order.coupon,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        
+        // Customer information
+        customer: order.userId ? {
+          id: order.userId.id,
+          name: order.userId.name,
+          email: order.userId.email,
+          phone: order.userId.phone,
+          memberSince: order.userId.createdAt
+        } : null,
+        
+        // Store information
+        store: order.storeId ? {
+          id: order.storeId.id,
+          name: order.storeId.name,
+          username: order.storeId.username,
+          logo: order.storeId.logo,
+          email: order.storeId.email,
+          contact: order.storeId.contact,
+          address: order.storeId.address,
+          status: order.storeId.status,
+          isActive: order.storeId.isActive,
+          memberSince: order.storeId.createdAt
+        } : null,
+        
+        // Delivery address
+        deliveryAddress: order.addressId ? {
+          name: order.addressId.name,
+          email: order.addressId.email,
+          street: order.addressId.street,
+          city: order.addressId.city,
+          state: order.addressId.state,
+          zip: order.addressId.zip,
+          country: order.addressId.country,
+          phone: order.addressId.phone
+        } : null,
+        
+        // Order items with complete details
+        orderItems: orderItemsWithTotals,
+        
+        // Order analytics
+        analytics: {
+          itemCount: orderItemCount,
+          uniqueItems: order.orderItems.length,
+          subtotal: subtotal,
+          discountAmount: discountAmount,
+          finalTotal: finalTotal
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Error in getCompleteOrderDetails:", error);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching the complete order details"
     });
   }
 };
@@ -1142,151 +1410,6 @@ export const getAdminStoreOrders = async (req, res) => {
   }
 };
 
-
-// ✅ UPDATE STORE ORDER STATUS BY ADMIN
-export const updateStoreOrderStatusByAdmin = async (req, res) => {
-  try {
-    const { storeId, orderId } = req.params;
-    const { status } = req.body;
-
-    if (!status) {
-      return res.status(400).json({
-        success: false,
-        message: 'Status is required'
-      });
-    }
-
-    const validStatuses = ["ORDER_PLACED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED", "PENDING", "READY", "PICKED_UP"];
-    
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid status. Valid statuses are: ${validStatuses.join(', ')}`
-      });
-    }
-
-    // Find the store by its string id field
-    const store = await storeModel.findOne({ id: storeId });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Store not found'
-      });
-    }
-
-    // Find the order by ID with populated data, matching the store's MongoDB _id
-    const order = await orderModel.findOne({ id: orderId, storeId: store._id })
-      .populate('userId', 'id name email')
-      .populate('storeId', 'id name username email');
-    
-    if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: 'Order not found or does not belong to this store'
-      });
-    }
-
-    // Save old status for reference
-    const oldStatus = order.status;
-
-    // Update order status
-    order.status = status;
-    
-    // When order is delivered, payment status should be changed to paid
-    if (status === 'DELIVERED') {
-      order.isPaid = true;
-    }
-    
-    // When order is cancelled, keep payment status as is (business logic may vary)
-    if (status === 'CANCELLED') {
-      // Optionally handle cancellation logic here
-    }
-
-    await order.save();
-
-    // Send email notifications
-    try {
-      // Notify customer
-      if (order.userId && order.userId.email) {
-        await sendEmail({
-          to: order.userId.email,
-          subject: `Order Status Updated - ${order.id}`,
-          html: `
-            <h2>Order Status Update</h2>
-            <p>Dear ${order.userId.name},</p>
-            <p>The status of your order #${order.id} has been updated by admin.</p>
-            <p><strong>Order Details:</strong></p>
-            <ul>
-              <li>Order ID: ${order.id}</li>
-              <li>Store: ${order.storeId.name}</li>
-              <li>Old Status: ${oldStatus}</li>
-              <li>New Status: ${order.status}</li>
-              <li>Total Amount: $${order.total}</li>
-              <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
-            </ul>
-            <p>Thank you for shopping with us!</p>
-          `
-        });
-      }
-
-      // Notify store
-      if (order.storeId && order.storeId.email) {
-        await sendEmail({
-          to: order.storeId.email,
-          subject: `Order Status Updated by Admin - ${order.id}`,
-          html: `
-            <h2>Order Status Update</h2>
-            <p>Hello ${order.storeId.name},</p>
-            <p>The status of order #${order.id} has been updated by admin.</p>
-            <p><strong>Order Details:</strong></p>
-            <ul>
-              <li>Order ID: ${order.id}</li>
-              <li>Customer: ${order.userId?.name}</li>
-              <li>Old Status: ${oldStatus}</li>
-              <li>New Status: ${order.status}</li>
-              <li>Total Amount: $${order.total}</li>
-              <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
-            </ul>
-          `
-        });
-      }
-    } catch (emailError) {
-      console.error("❌ Error sending status update emails:", emailError);
-      // Don't fail the status update if email sending fails
-    }
-
-    // Send response
-    res.json({
-      success: true,
-      message: 'Order status updated successfully',
-      order: {
-        id: order.id,
-        oldStatus,
-        newStatus: order.status,
-        isPaid: order.isPaid,
-        total: order.total,
-        customer: {
-          id: order.userId?.id,
-          name: order.userId?.name,
-          email: order.userId?.email
-        },
-        store: {
-          id: order.storeId?.id,
-          name: order.storeId?.name,
-          username: order.storeId?.username
-        },
-        updatedAt: order.updatedAt
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Update store order status by admin error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Something went wrong while updating order status'
-    });
-  }
-};
 
 
 // ✅ GET MY ORDERS (مع الألوان)
