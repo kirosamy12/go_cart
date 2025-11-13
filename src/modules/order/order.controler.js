@@ -1904,9 +1904,56 @@ export const getAdminDashboard = async (req, res) => {
         $group: {
           _id: { $month: "$createdAt" },
           total: { $sum: "$total" },
+          count: { $sum: 1 }
         },
       },
       { $sort: { "_id": 1 } },
+    ]);
+
+    // 📊 Sales Analytics by Status
+    const salesByStatus = await orderModel.aggregate([
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          revenue: { $sum: "$total" }
+        }
+      },
+      { $sort: { revenue: -1 } }
+    ]);
+
+    // 📅 Recent Sales (Last 7 days)
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    
+    const recentSales = await orderModel.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: oneWeekAgo },
+          status: { $in: ["DELIVERED", "SHIPPED", "PROCESSING", "ORDER_PLACED"] }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          dailyRevenue: { $sum: "$total" },
+          orderCount: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // 💳 Payment Method Analytics
+    const paymentMethodStats = await orderModel.aggregate([
+      {
+        $group: {
+          _id: "$paymentMethod",
+          count: { $sum: 1 },
+          revenue: { $sum: "$total" }
+        }
+      }
     ]);
 
     // 🏪 Store Information with Product Counts
@@ -1958,6 +2005,9 @@ export const getAdminDashboard = async (req, res) => {
         storeRevenues,
         topStore,
         monthlyRevenue,
+        salesByStatus,
+        recentSales,
+        paymentMethodStats,
         storesWithProducts: {
           count: storesWithProducts.length,
           stores: storesWithProducts
