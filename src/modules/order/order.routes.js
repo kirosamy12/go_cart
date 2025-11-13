@@ -73,7 +73,7 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get("/admin/stores-with-orders", protectRoutes, allowTo("admin"), getAllStoresWithOrders);
  router.put("/admin/order/:orderId/status", protectRoutes, allowTo("admin"), updateOrderStatusAsAdmin);
 
- router.get("/dashbord/admin", protectRoutes, allowTo("admin"), getAdminDashboard);
+ router.get("/admin/dashbord", protectRoutes, allowTo("admin"), getAdminDashboard);
  router.get("/dashbord/store", protectRoutes, allowTo("store"), getStoreDashboard);
 
 export default router;
