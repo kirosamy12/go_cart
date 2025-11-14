@@ -268,7 +268,6 @@ export const getMyStoreProducts = async (req, res) => {
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-
     const uploadedImages = req.body.images || [];
 
     const allowedFields = [
@@ -277,8 +276,8 @@ export const updateProduct = async (req, res) => {
       'mrp',
       'price',
       'images',
-      'colors', // ← إضافة الألوان للحقول المسموحة
-      'sizes',  // ← إضافة المقاسات للحقول المسموحة
+      'colors',
+      'sizes',
       'category',
       'inStock',
       'storeId'
@@ -292,32 +291,49 @@ export const updateProduct = async (req, res) => {
       }
     });
 
-    // استبدل الصور القديمة بالصور المرفوعة من كلاودنيري
+    // ✅ تحويل الـ strings للـ arrays إذا لزم الأمر
+    if (updates.colors) {
+      if (typeof updates.colors === 'string') {
+        try {
+          updates.colors = JSON.parse(updates.colors);
+        } catch (e) {
+          // لو مش JSON، حاول split بالـ comma
+          updates.colors = updates.colors.split(',').map(c => c.trim()).filter(Boolean);
+        }
+      }
+      
+      if (!Array.isArray(updates.colors)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Colors must be an array'
+        });
+      }
+    }
+
+    if (updates.sizes) {
+      if (typeof updates.sizes === 'string') {
+        try {
+          updates.sizes = JSON.parse(updates.sizes);
+        } catch (e) {
+          // لو مش JSON، حاول split بالـ comma
+          updates.sizes = updates.sizes.split(',').map(s => s.trim()).filter(Boolean);
+        }
+      }
+      
+      if (!Array.isArray(updates.sizes)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Sizes must be an array'
+        });
+      }
+    }
+
+    // استبدل الصور القديمة بالصور المرفوعة
     if (uploadedImages.length > 0) {
       updates.images = uploadedImages;
     }
 
-    // لو عايز تحديث الألوان، اتأكد إنها array
-    if (updates.colors && !Array.isArray(updates.colors)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Colors must be an array'
-      });
-    }
-
-    // لو عايز تحديث المقاسات، اتأكد إنها array
-    if (updates.sizes && !Array.isArray(updates.sizes)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Sizes must be an array'
-      });
-    }
-
-    if (
-      updates.price &&
-      updates.mrp &&
-      Number(updates.price) > Number(updates.mrp)
-    ) {
+    if (updates.price && updates.mrp && Number(updates.price) > Number(updates.mrp)) {
       return res.status(400).json({
         success: false,
         message: 'Price cannot be greater than MRP.'
@@ -358,7 +374,8 @@ export const updateProduct = async (req, res) => {
     console.error('Update Product Error:', err);
     res.status(500).json({
       success: false,
-      message: 'Internal Server Error'
+      message: 'Internal Server Error',
+      error: err.message
     });
   }
 };

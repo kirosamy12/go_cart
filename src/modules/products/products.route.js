@@ -11,7 +11,7 @@ import {
   getMyStoreProducts,
   toggleStock,
   getProductsByCategory
-} from '../products/products.controler.js';
+} from './products.controler.js';
 import { allowTo, protectRoutes } from '../Auth/auth.controler.js';
 import { uploadArray } from '../../utils/fileUploud.js';
 
