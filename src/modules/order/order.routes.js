@@ -46,10 +46,10 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get('/:orderId/tracking',protectRoutes,allowTo("store"), getOrderTracking);
 
 // // Store orders
+ router.get('/store/orders/successful',protectRoutes ,allowTo("store"), getStoreSuccessfulOrders);
+
  router.get('/store/orders',protectRoutes ,allowTo("store"), getStoreOrders);
  router.get('/store/orders/:orderId',protectRoutes ,allowTo("store"), getStoreOrderById);
- router.get('/store/orders/successful',protectRoutes ,allowTo("store"), getStoreSuccessfulOrders);
- router.get('/store/orders/successful/:orderId',protectRoutes ,allowTo("store"), getStoreSuccessfulOrderById);
  router.put("/store/order/:orderId/status", protectRoutes,allowTo('store'), updateOrderStatus);
 
  router.get("/use/order/myOrders", protectRoutes, getMyOrders);

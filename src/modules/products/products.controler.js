@@ -220,15 +220,38 @@ export const getMyStoreProducts = async (req, res) => {
       });
     }
 
-    const products = await productsModel.find({ storeId: store._id })
-      .populate('storeId', 'name email image username')
-      .populate('category', 'name slug');
+    // Get query parameters for pagination and filtering
+    const { page = 1, limit = 10, category, inStock } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Build query filter
+    const query = { storeId: store._id };
+    if (category) query.category = category;
+    if (inStock !== undefined) query.inStock = inStock === 'true';
+
+    // Get products with pagination
+    const [products, total] = await Promise.all([
+      productsModel.find(query)
+        .populate('storeId', 'name email image username')
+        .populate('category', 'name slug')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit, 10))
+        .lean(),
+      productsModel.countDocuments(query)
+    ]);
 
     res.status(200).json({
       success: true,
       message: 'Products for your store fetched successfully',
       count: products.length,
-      products
+      products,
+      pagination: {
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        total,
+        pages: Math.ceil(total / limit)
+      }
     });
   } catch (err) {
     console.error('Get My Store Products Error:', err);
