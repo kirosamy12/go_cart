@@ -80,6 +80,6 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.put("/admin/order/:orderId/status", protectRoutes, allowTo("admin"), updateOrderStatusAsAdmin);
 
  router.get("/admin/dashboard", protectRoutes, allowTo("admin"), getAdminDashboard);
- router.get("/dashbord/store", protectRoutes, allowTo("store"), getStoreDashboard);
+ router.get("/dashboard/store", protectRoutes, allowTo("store"), getStoreDashboard);
 
 export default router;
