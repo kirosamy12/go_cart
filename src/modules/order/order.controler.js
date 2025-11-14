@@ -1005,25 +1005,137 @@ export const getAllStoresWithOrders = async (req, res) => {
       isActive: store.isActive,
       createdAt: store.createdAt,
       orders: ordersByStore[store._id.toString()] || [],
-      ordersCount: ordersByStore[store._id.toString()] ? ordersByStore[store._id.toString()].length : 0
     }));
 
+    // Send response
     res.json({
       success: true,
-      stores: result,
       pagination: {
         page: parseInt(page, 10),
         limit: parseInt(limit, 10),
         total: totalStores,
         pages: Math.ceil(totalStores / limit)
-      }
+      },
+
+      result
     });
 
   } catch (error) {
     console.error('❌ Get all stores with orders error:', error);
     res.status(500).json({
       success: false,
-      message: 'Something went wrong while fetching stores and orders'
+      message: 'Something went wrong while fetching stores with orders'
+    });
+  }
+};
+
+
+// ✅ GET ORDER BY ID FOR STORE OWNER
+export const getStoreOrderById = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: "Order ID is required"
+      });
+    }
+
+    // Find the store for this user
+    const store = await storeModel.findOne({ userId });
+    
+    if (!store) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have a store'
+      });
+    }
+
+    // Find the order by ID and ensure it belongs to the store
+    const order = await orderModel.findOne({ 
+      id: orderId,
+      storeId: store._id
+    })
+      .populate('userId', 'id name email phone')
+      .populate('addressId', 'name email street city state zip country phone')
+      .populate('orderItems.productId', 'id name images price colors sizes description category');
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found or does not belong to your store"
+      });
+    }
+
+    // Format the response with detailed information
+    res.json({
+      success: true,
+      order: {
+        id: order.id,
+        total: order.total,
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        isPaid: order.isPaid,
+        isCouponUsed: order.isCouponUsed,
+        coupon: order.coupon,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        
+        // Customer information
+        customer: order.userId ? {
+          id: order.userId.id,
+          name: order.userId.name,
+          email: order.userId.email,
+          phone: order.userId.phone
+        } : null,
+        
+        // Delivery address
+        deliveryAddress: order.addressId ? {
+          name: order.addressId.name,
+          email: order.addressId.email,
+          street: order.addressId.street,
+          city: order.addressId.city,
+          state: order.addressId.state,
+          zip: order.addressId.zip,
+          country: order.addressId.country,
+          phone: order.addressId.phone
+        } : null,
+        
+        // Order items with complete details
+        orderItems: order.orderItems.map(item => ({
+          product: {
+            id: item.productId.id,
+            name: item.productId.name,
+            images: item.productId.images,
+            price: item.productId.price,
+            colors: item.productId.colors,
+            sizes: item.productId.sizes,
+            description: item.productId.description,
+            category: item.productId.category
+          },
+          quantity: item.quantity,
+          unitPrice: item.price,
+          selectedColor: item.selectedColor,
+          selectedSize: item.selectedSize,
+          lineTotal: item.price * item.quantity
+        })),
+        
+        // Order analytics
+        analytics: {
+          itemCount: order.orderItems.reduce((total, item) => total + item.quantity, 0),
+          uniqueItems: order.orderItems.length,
+          subtotal: order.orderItems.reduce((total, item) => total + (item.price * item.quantity), 0)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Error in getStoreOrderById:", error);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong while fetching the order details"
     });
   }
 };
@@ -1523,6 +1635,7 @@ export const trackOrder = async (req, res) => {
 
     const currentUserId = req.user._id.toString();
     const isOrderOwner = toStr(order.userId) === currentUserId;
+
 
     const userStore = await storeModel.findOne({ userId: req.user.id });
     const isStoreOwner = userStore && toStr(userStore._id) === toStr(order.storeId);

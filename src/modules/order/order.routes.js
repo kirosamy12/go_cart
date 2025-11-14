@@ -27,7 +27,9 @@ getMyOrders,
    updateOrderStatusAsAdmin,
    getAdminStoreOrders,
    updateStoreOrderStatusByAdmin,
-   getCompleteOrderDetails
+   getCompleteOrderDetails,
+   // New store functions
+   getStoreOrderById
 } from '../order/order.controler.js';
 import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js';
 
@@ -45,6 +47,7 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
 
 // // Store orders
  router.get('/store/orders',protectRoutes ,allowTo("store"), getStoreOrders);
+ router.get('/store/orders/:orderId',protectRoutes ,allowTo("store"), getStoreOrderById);
  router.get('/store/orders/successful',protectRoutes ,allowTo("store"), getStoreSuccessfulOrders);
  router.get('/store/orders/successful/:orderId',protectRoutes ,allowTo("store"), getStoreSuccessfulOrderById);
  router.put('/:orderId/status', protectRoutes,allowTo('store'), updateOrderStatus);
