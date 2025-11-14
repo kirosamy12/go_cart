@@ -50,7 +50,7 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  router.get('/store/orders/:orderId',protectRoutes ,allowTo("store"), getStoreOrderById);
  router.get('/store/orders/successful',protectRoutes ,allowTo("store"), getStoreSuccessfulOrders);
  router.get('/store/orders/successful/:orderId',protectRoutes ,allowTo("store"), getStoreSuccessfulOrderById);
- router.put('/:orderId/status', protectRoutes,allowTo('store'), updateOrderStatus);
+ router.put("/store/:orderId/status", protectRoutes,allowTo('store'), updateOrderStatus);
 
  router.get("/use/order/myOrders", protectRoutes, getMyOrders);
  router.get("/track/:orderId", protectRoutes, trackOrder);
