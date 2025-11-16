@@ -42,6 +42,12 @@ const productSchema = new mongoose.Schema({
     of: Number,
     default: {}
   },
+  // New field for quantity per color and size combination
+  colorSizeQuantities: {
+    type: Map,
+    of: Map,
+    default: {}
+  },
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
