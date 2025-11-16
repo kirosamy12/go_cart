@@ -3,11 +3,10 @@ import storeModel from '../../../DB/models/store.model.js';
 import { nanoid } from 'nanoid';
 import categoryModel from '../../../DB/models/category.model.js';
 
-
 // ✅ CREATE PRODUCT (مع دعم الألوان والمقاسات والكميات)
 export const createProduct = async (req, res) => {
   try {
-    const {
+    let {
       name,
       description,
       mrp,
@@ -37,11 +36,118 @@ export const createProduct = async (req, res) => {
       });
     }
 
+    // Parse MRP and price to numbers
+    mrp = Number(mrp);
+    price = Number(price);
+
     if (price > mrp) {
       return res.status(400).json({
         success: false,
         message: 'Price cannot be greater than MRP.'
       });
+    }
+
+    // ✅ تحويل الـ strings للـ arrays إذا لزم الأمر
+    if (colors) {
+      if (typeof colors === 'string') {
+        try {
+          colors = JSON.parse(colors);
+        } catch (e) {
+          // لو مش JSON، حاول split بالـ comma
+          colors = colors.split(',').map(c => c.trim()).filter(Boolean);
+        }
+      }
+      
+      if (!Array.isArray(colors)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Colors must be an array'
+        });
+      }
+    }
+
+    if (sizes) {
+      if (typeof sizes === 'string') {
+        try {
+          sizes = JSON.parse(sizes);
+        } catch (e) {
+          // لو مش JSON، حاول split بالـ comma
+          sizes = sizes.split(',').map(s => s.trim()).filter(Boolean);
+        }
+      }
+      
+      if (!Array.isArray(sizes)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Sizes must be an array'
+        });
+      }
+    }
+
+    // Process size quantities
+    let processedSizeQuantities = new Map();
+    if (sizeQuantities) {
+      if (typeof sizeQuantities === 'string') {
+        try {
+          sizeQuantities = JSON.parse(sizeQuantities);
+        } catch (e) {
+          return res.status(400).json({
+            success: false,
+            message: 'Size quantities must be a valid JSON object'
+          });
+        }
+      }
+      
+      if (typeof sizeQuantities === 'object' && !Array.isArray(sizeQuantities)) {
+        processedSizeQuantities = new Map();
+        Object.keys(sizeQuantities).forEach(size => {
+          if (typeof sizeQuantities[size] === 'number' && sizeQuantities[size] >= 0) {
+            processedSizeQuantities.set(size, sizeQuantities[size]);
+          }
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Size quantities must be an object with size as key and quantity as value'
+        });
+      }
+    }
+
+    // Process color size quantities
+    let processedColorSizeQuantities = new Map();
+    if (colorSizeQuantities) {
+      if (typeof colorSizeQuantities === 'string') {
+        try {
+          colorSizeQuantities = JSON.parse(colorSizeQuantities);
+        } catch (e) {
+          return res.status(400).json({
+            success: false,
+            message: 'Color size quantities must be a valid JSON object'
+          });
+        }
+      }
+      
+      if (typeof colorSizeQuantities === 'object' && !Array.isArray(colorSizeQuantities)) {
+        processedColorSizeQuantities = new Map();
+        Object.keys(colorSizeQuantities).forEach(color => {
+          if (typeof colorSizeQuantities[color] === 'object' && colorSizeQuantities[color] !== null) {
+            const sizeMap = new Map();
+            Object.keys(colorSizeQuantities[color]).forEach(size => {
+              if (typeof colorSizeQuantities[color][size] === 'number' && colorSizeQuantities[color][size] >= 0) {
+                sizeMap.set(size, colorSizeQuantities[color][size]);
+              }
+            });
+            if (sizeMap.size > 0) {
+              processedColorSizeQuantities.set(color, sizeMap);
+            }
+          }
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Color size quantities must be an object'
+        });
+      }
     }
 
     const store = await storeModel.findOne({ userId });
@@ -50,34 +156,6 @@ export const createProduct = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Store not found'
-      });
-    }
-
-    // Process size quantities
-    const processedSizeQuantities = new Map();
-    if (sizeQuantities && typeof sizeQuantities === 'object') {
-      Object.keys(sizeQuantities).forEach(size => {
-        if (typeof sizeQuantities[size] === 'number' && sizeQuantities[size] >= 0) {
-          processedSizeQuantities.set(size, sizeQuantities[size]);
-        }
-      });
-    }
-
-    // Process color size quantities
-    const processedColorSizeQuantities = new Map();
-    if (colorSizeQuantities && typeof colorSizeQuantities === 'object') {
-      Object.keys(colorSizeQuantities).forEach(color => {
-        if (typeof colorSizeQuantities[color] === 'object' && colorSizeQuantities[color] !== null) {
-          const sizeMap = new Map();
-          Object.keys(colorSizeQuantities[color]).forEach(size => {
-            if (typeof colorSizeQuantities[color][size] === 'number' && colorSizeQuantities[color][size] >= 0) {
-              sizeMap.set(size, colorSizeQuantities[color][size]);
-            }
-          });
-          if (sizeMap.size > 0) {
-            processedColorSizeQuantities.set(color, sizeMap);
-          }
-        }
       });
     }
 
@@ -93,7 +171,7 @@ export const createProduct = async (req, res) => {
       sizeQuantities: processedSizeQuantities, // ← الكميات لكل مقاس
       colorSizeQuantities: processedColorSizeQuantities, // ← الكميات لكل لون ومقاس
       category,
-      inStock: inStock !== undefined ? inStock : true,
+      inStock: inStock !== undefined ? inStock === 'true' || inStock === true : true,
       storeId: store._id
     });
 
@@ -109,7 +187,6 @@ export const createProduct = async (req, res) => {
     res.status(500).json({ success: false, message: 'Internal Server Error' });
   }
 };
-
 
 // ✅ UPDATE PRODUCT (مع دعم تعديل الألوان والمقاسات والكميات)
 export const updateProduct = async (req, res) => {
@@ -292,6 +369,50 @@ export const updateProduct = async (req, res) => {
       message: 'Internal Server Error',
       error: err.message
     });
+  }
+};
+
+
+// ✅ DELETE PRODUCT
+export const deleteProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await productsModel.findOneAndDelete({ id });
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+
+    res.status(200).json({ success: true, message: 'Product deleted successfully' });
+  } catch (err) {
+    console.error('Delete Product Error:', err);
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
+  }
+};
+
+
+// ✅ TOGGLE STOCK
+export const toggleStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await productsModel.findOne({ id });
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+
+    product.inStock = !product.inStock;
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Product stock status toggled to ${product.inStock}`,
+      product
+    });
+  } catch (err) {
+    console.error('Toggle Stock Error:', err);
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
   }
 };
 
@@ -576,49 +697,5 @@ export const getMyStoreProducts = async (req, res) => {
       message: 'Internal Server Error',
       error: err.message
     });
-  }
-};
-
-
-// ✅ DELETE PRODUCT
-export const deleteProduct = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const product = await productsModel.findOneAndDelete({ id });
-
-    if (!product) {
-      return res.status(404).json({ success: false, message: 'Product not found' });
-    }
-
-    res.status(200).json({ success: true, message: 'Product deleted successfully' });
-  } catch (err) {
-    console.error('Delete Product Error:', err);
-    res.status(500).json({ success: false, message: 'Internal Server Error' });
-  }
-};
-
-
-// ✅ TOGGLE STOCK
-export const toggleStock = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const product = await productsModel.findOne({ id });
-    if (!product) {
-      return res.status(404).json({ success: false, message: 'Product not found' });
-    }
-
-    product.inStock = !product.inStock;
-    await product.save();
-
-    res.status(200).json({
-      success: true,
-      message: `Product stock status toggled to ${product.inStock}`,
-      product
-    });
-  } catch (err) {
-    console.error('Toggle Stock Error:', err);
-    res.status(500).json({ success: false, message: 'Internal Server Error' });
   }
 };
