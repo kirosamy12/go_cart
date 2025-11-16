@@ -1,22 +1,22 @@
-import { nanoid } from 'nanoid';
 import productsModel from '../../../DB/models/products.model.js';
 import storeModel from '../../../DB/models/store.model.js';
+import { nanoid } from 'nanoid';
 import categoryModel from '../../../DB/models/category.model.js';
 
-// ✅ CREATE PRODUCT (مع دعم الألوان والمقاسات والكميات والروائح)
+
+// ✅ CREATE PRODUCT (مع دعم الألوان والروائح والكميات)
 export const createProduct = async (req, res) => {
   try {
-    let {
+    const {
       name,
       description,
       mrp,
       price,
       images,
-      colors, // ← الألوان اختيارية
-      sizes,  // ← المقاسات اختيارية
-      scents, // ← الروائح اختيارية
-      sizeQuantities, // ← الكميات لكل مقاس
-      colorSizeQuantities, // ← الكميات لكل لون ومقاس
+      colors,          // ← الألوان اختيارية
+      sizes,           // ← المقاسات اختيارية
+      scents,          // ← الروائح اختيارية
+      sizeQuantities,  // ← الكميات لكل مقاس اختيارية
       category,
       inStock
     } = req.body;
@@ -37,137 +37,11 @@ export const createProduct = async (req, res) => {
       });
     }
 
-    // Parse MRP and price to numbers
-    mrp = Number(mrp);
-    price = Number(price);
-
     if (price > mrp) {
       return res.status(400).json({
         success: false,
         message: 'Price cannot be greater than MRP.'
       });
-    }
-
-    // ✅ تحويل الـ strings للـ arrays إذا لزم الأمر
-    if (colors) {
-      if (typeof colors === 'string') {
-        try {
-          colors = JSON.parse(colors);
-        } catch (e) {
-          // لو مش JSON، حاول split بالـ comma
-          colors = colors.split(',').map(c => c.trim()).filter(Boolean);
-        }
-      }
-      
-      if (!Array.isArray(colors)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Colors must be an array'
-        });
-      }
-    }
-
-    if (sizes) {
-      if (typeof sizes === 'string') {
-        try {
-          sizes = JSON.parse(sizes);
-        } catch (e) {
-          // لو مش JSON، حاول split بالـ comma
-          sizes = sizes.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      if (!Array.isArray(sizes)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Sizes must be an array'
-        });
-      }
-    }
-
-    // Process scents
-    if (scents) {
-      if (typeof scents === 'string') {
-        try {
-          scents = JSON.parse(scents);
-        } catch (e) {
-          // لو مش JSON، حاول split بالـ comma
-          scents = scents.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      if (!Array.isArray(scents)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Scents must be an array'
-        });
-      }
-    }
-
-    // Process size quantities
-    let processedSizeQuantities = new Map();
-    if (sizeQuantities) {
-      if (typeof sizeQuantities === 'string') {
-        try {
-          sizeQuantities = JSON.parse(sizeQuantities);
-        } catch (e) {
-          return res.status(400).json({
-            success: false,
-            message: 'Size quantities must be a valid JSON object'
-          });
-        }
-      }
-      
-      if (typeof sizeQuantities === 'object' && !Array.isArray(sizeQuantities)) {
-        processedSizeQuantities = new Map();
-        Object.keys(sizeQuantities).forEach(size => {
-          if (typeof sizeQuantities[size] === 'number' && sizeQuantities[size] >= 0) {
-            processedSizeQuantities.set(size, sizeQuantities[size]);
-          }
-        });
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: 'Size quantities must be an object with size as key and quantity as value'
-        });
-      }
-    }
-
-    // Process color size quantities
-    let processedColorSizeQuantities = new Map();
-    if (colorSizeQuantities) {
-      if (typeof colorSizeQuantities === 'string') {
-        try {
-          colorSizeQuantities = JSON.parse(colorSizeQuantities);
-        } catch (e) {
-          return res.status(400).json({
-            success: false,
-            message: 'Color size quantities must be a valid JSON object'
-          });
-        }
-      }
-      
-      if (typeof colorSizeQuantities === 'object' && !Array.isArray(colorSizeQuantities)) {
-        processedColorSizeQuantities = new Map();
-        Object.keys(colorSizeQuantities).forEach(color => {
-          if (typeof colorSizeQuantities[color] === 'object' && colorSizeQuantities[color] !== null) {
-            const sizeMap = new Map();
-            Object.keys(colorSizeQuantities[color]).forEach(size => {
-              if (typeof colorSizeQuantities[color][size] === 'number' && colorSizeQuantities[color][size] >= 0) {
-                sizeMap.set(size, colorSizeQuantities[color][size]);
-              }
-            });
-            if (sizeMap.size > 0) {
-              processedColorSizeQuantities.set(color, sizeMap);
-            }
-          }
-        });
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: 'Color size quantities must be an object'
-        });
-      }
     }
 
     const store = await storeModel.findOne({ userId });
@@ -179,6 +53,20 @@ export const createProduct = async (req, res) => {
       });
     }
 
+    // ✅ معالجة sizeQuantities إذا كان string أو object
+    let processedSizeQuantities = {};
+    if (sizeQuantities) {
+      if (typeof sizeQuantities === 'string') {
+        try {
+          processedSizeQuantities = JSON.parse(sizeQuantities);
+        } catch (e) {
+          console.error('Invalid sizeQuantities format:', e);
+        }
+      } else if (typeof sizeQuantities === 'object') {
+        processedSizeQuantities = sizeQuantities;
+      }
+    }
+
     const product = new productsModel({
       id: nanoid(10),
       name,
@@ -186,13 +74,12 @@ export const createProduct = async (req, res) => {
       mrp,
       price,
       images,
-      colors: colors || [], // ← إذا مفيش ألوان يبقى array فاضي
-      sizes: sizes || [],   // ← إذا مفيش مقاسات يبقى array فاضي
-      scents: scents || [], // ← إذا مفيش روائح يبقى array فاضي
-      sizeQuantities: processedSizeQuantities, // ← الكميات لكل مقاس
-      colorSizeQuantities: processedColorSizeQuantities, // ← الكميات لكل لون ومقاس
+      colors: colors || [],
+      sizes: sizes || [],
+      scents: scents || [],              // ← إضافة الروائح
+      sizeQuantities: processedSizeQuantities, // ← إضافة الكميات
       category,
-      inStock: inStock !== undefined ? inStock === 'true' || inStock === true : true,
+      inStock: inStock !== undefined ? inStock : true,
       storeId: store._id
     });
 
@@ -209,7 +96,193 @@ export const createProduct = async (req, res) => {
   }
 };
 
-// ✅ UPDATE PRODUCT (مع دعم تعديل الألوان والمقاسات والكميات والروائح)
+
+// ✅ GET ALL PRODUCTS (مع الألوان والروائح والكميات)
+export const getAllProducts = async (req, res) => {
+  try {
+    const products = await productsModel.find()
+      .populate({
+        path: 'storeId',
+        select: 'name email image'
+      })
+      .populate({
+        path: 'category',
+        select: 'name slug'
+      })
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      message: 'Products fetched successfully',
+      count: products.length,
+      products: products || []
+    });
+  } catch (err) {
+    console.error('Get Products Error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: 'Internal Server Error',
+      error: err.message
+    });
+  }
+};
+
+
+// ✅ GET PRODUCTS BY CATEGORY (مع الألوان والروائح والكميات)
+export const getProductsByCategory = async (req, res) => {
+  const { slug } = req.params;
+
+  try {
+    const category = await categoryModel.findOne({ slug });
+
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: 'Category not found',
+      });
+    }
+
+    const products = await productsModel.find({ category: category._id })
+      .populate({
+        path: 'storeId',
+        select: 'name email image',
+      })
+      .populate({
+        path: 'category',
+        select: 'name slug',
+      })
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      message: 'Products in the same category fetched successfully',
+      count: products.length,
+      products: products || [],
+    });
+  } catch (err) {
+    console.error('Get Products by Category Error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: 'Internal Server Error',
+      error: err.message,
+    });
+  }
+};
+
+
+// ✅ GET SINGLE PRODUCT (مع الألوان والروائح والكميات)
+export const getProductById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await productsModel.findOne({ id })
+      .populate('storeId', 'name email image')
+      .populate('category', 'name slug');
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+
+    res.status(200).json({ success: true, product });
+  } catch (err) {
+    console.error('Get Product Error:', err);
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
+  }
+};
+
+
+// ✅ GET PRODUCTS BY STORE USERNAME (مع الألوان والروائح والكميات)
+export const getProductsByStoreUsername = async (req, res) => {
+  try {
+    const { username } = req.params;
+
+    const store = await storeModel.findOne({ username });
+
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        message: 'Store not found',
+      });
+    }
+
+    const products = await productsModel.find({ storeId: store._id })
+      .populate('storeId', 'name email image username')
+      .populate('category', 'name slug');
+
+    res.status(200).json({ success: true, products });
+  } catch (err) {
+    console.error('Get Store Products Error:', err);
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
+  }
+};
+
+
+// ✅ GET MY STORE PRODUCTS (مع الألوان والروائح والكميات)
+export const getMyStoreProducts = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: User not found in token'
+      });
+    }
+
+    const store = await storeModel.findOne({ userId });
+
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        message: 'Store not found for this user'
+      });
+    }
+
+    // Get query parameters for pagination and filtering
+    const { page = 1, limit = 10, category, inStock } = req.query;
+    const skip = (page - 1) * limit;
+
+    // Build query filter
+    const query = { storeId: store._id };
+    if (category) query.category = category;
+    if (inStock !== undefined) query.inStock = inStock === 'true';
+
+    // Get products with pagination
+    const [products, total] = await Promise.all([
+      productsModel.find(query)
+        .populate('storeId', 'name email image username')
+        .populate('category', 'name slug')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit, 10))
+        .lean(),
+      productsModel.countDocuments(query)
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: 'Products for your store fetched successfully',
+      count: products.length,
+      products,
+      pagination: {
+        page: parseInt(page, 10),
+        limit: parseInt(limit, 10),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (err) {
+    console.error('Get My Store Products Error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Internal Server Error',
+      error: err.message
+    });
+  }
+};
+
+
+// ✅ UPDATE PRODUCT (مع دعم تعديل الألوان والروائح والكميات)
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
@@ -223,9 +296,8 @@ export const updateProduct = async (req, res) => {
       'images',
       'colors',
       'sizes',
-      'scents',
-      'sizeQuantities',
-      'colorSizeQuantities',
+      'scents',          // ← إضافة scents
+      'sizeQuantities',  // ← إضافة sizeQuantities
       'category',
       'inStock',
       'storeId'
@@ -245,7 +317,6 @@ export const updateProduct = async (req, res) => {
         try {
           updates.colors = JSON.parse(updates.colors);
         } catch (e) {
-          // لو مش JSON، حاول split بالـ comma
           updates.colors = updates.colors.split(',').map(c => c.trim()).filter(Boolean);
         }
       }
@@ -263,7 +334,6 @@ export const updateProduct = async (req, res) => {
         try {
           updates.sizes = JSON.parse(updates.sizes);
         } catch (e) {
-          // لو مش JSON، حاول split بالـ comma
           updates.sizes = updates.sizes.split(',').map(s => s.trim()).filter(Boolean);
         }
       }
@@ -276,13 +346,12 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    // Process scents
+    // ✅ معالجة scents
     if (updates.scents) {
       if (typeof updates.scents === 'string') {
         try {
           updates.scents = JSON.parse(updates.scents);
         } catch (e) {
-          // لو مش JSON، حاول split بالـ comma
           updates.scents = updates.scents.split(',').map(s => s.trim()).filter(Boolean);
         }
       }
@@ -295,7 +364,7 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    // Process size quantities
+    // ✅ معالجة sizeQuantities
     if (updates.sizeQuantities) {
       if (typeof updates.sizeQuantities === 'string') {
         try {
@@ -303,60 +372,15 @@ export const updateProduct = async (req, res) => {
         } catch (e) {
           return res.status(400).json({
             success: false,
-            message: 'Size quantities must be a valid JSON object'
+            message: 'Invalid sizeQuantities format'
           });
         }
       }
       
-      if (typeof updates.sizeQuantities === 'object' && !Array.isArray(updates.sizeQuantities)) {
-        const processedSizeQuantities = new Map();
-        Object.keys(updates.sizeQuantities).forEach(size => {
-          if (typeof updates.sizeQuantities[size] === 'number' && updates.sizeQuantities[size] >= 0) {
-            processedSizeQuantities.set(size, updates.sizeQuantities[size]);
-          }
-        });
-        updates.sizeQuantities = processedSizeQuantities;
-      } else {
+      if (typeof updates.sizeQuantities !== 'object') {
         return res.status(400).json({
           success: false,
-          message: 'Size quantities must be an object with size as key and quantity as value'
-        });
-      }
-    }
-
-    // Process color size quantities
-    if (updates.colorSizeQuantities) {
-      if (typeof updates.colorSizeQuantities === 'string') {
-        try {
-          updates.colorSizeQuantities = JSON.parse(updates.colorSizeQuantities);
-        } catch (e) {
-          return res.status(400).json({
-            success: false,
-            message: 'Color size quantities must be a valid JSON object'
-          });
-        }
-      }
-      
-      if (typeof updates.colorSizeQuantities === 'object' && !Array.isArray(updates.colorSizeQuantities)) {
-        const processedColorSizeQuantities = new Map();
-        Object.keys(updates.colorSizeQuantities).forEach(color => {
-          if (typeof updates.colorSizeQuantities[color] === 'object' && updates.colorSizeQuantities[color] !== null) {
-            const sizeMap = new Map();
-            Object.keys(updates.colorSizeQuantities[color]).forEach(size => {
-              if (typeof updates.colorSizeQuantities[color][size] === 'number' && updates.colorSizeQuantities[color][size] >= 0) {
-                sizeMap.set(size, updates.colorSizeQuantities[color][size]);
-              }
-            });
-            if (sizeMap.size > 0) {
-              processedColorSizeQuantities.set(color, sizeMap);
-            }
-          }
-        });
-        updates.colorSizeQuantities = processedColorSizeQuantities;
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: 'Color size quantities must be an object'
+          message: 'sizeQuantities must be an object'
         });
       }
     }
@@ -413,101 +437,46 @@ export const updateProduct = async (req, res) => {
   }
 };
 
-// ✅ GET ALL PRODUCTS
-export const getAllProducts = async (req, res) => {
-  try {
-    const { page = 1, limit = 10, category, inStock, minPrice, maxPrice } = req.query;
-    
-    const query = {};
-    
-    if (category) query.category = category;
-    if (inStock !== undefined) query.inStock = inStock === 'true';
-    if (minPrice || maxPrice) {
-      query.price = {};
-      if (minPrice) query.price.$gte = Number(minPrice);
-      if (maxPrice) query.price.$lte = Number(maxPrice);
-    }
-    
-    const options = {
-      page: parseInt(page, 10),
-      limit: parseInt(limit, 10),
-      populate: [
-        { path: 'storeId', select: 'name email' },
-        { path: 'category', select: 'name slug' }
-      ],
-      sort: { createdAt: -1 }
-    };
-    
-    const products = await productsModel.paginate(query, options);
-    
-    res.status(200).json({
-      success: true,
-      products
-    });
-  } catch (err) {
-    console.error('Get All Products Error:', err);
-    res.status(500).json({ success: false, message: 'Internal Server Error' });
-  }
-};
-
-// ✅ GET PRODUCT BY ID
-export const getProductById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const product = await productsModel.findOne({ id })
-      .populate('storeId', 'name email')
-      .populate('category', 'name slug');
-    
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
-      product
-    });
-  } catch (err) {
-    console.error('Get Product By ID Error:', err);
-    res.status(500).json({ success: false, message: 'Internal Server Error' });
-  }
-};
 
 // ✅ DELETE PRODUCT
 export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id || req.user?._id;
-    
-    const product = await productsModel.findOne({ id });
-    
+
+    const product = await productsModel.findOneAndDelete({ id });
+
     if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
+      return res.status(404).json({ success: false, message: 'Product not found' });
     }
-    
-    const store = await storeModel.findOne({ userId, _id: product.storeId });
-    
-    if (!store) {
-      return res.status(403).json({
-        success: false,
-        message: 'Unauthorized: You do not own this product'
-      });
-    }
-    
-    await productsModel.deleteOne({ id });
-    
-    res.status(200).json({
-      success: true,
-      message: 'Product deleted successfully'
-    });
+
+    res.status(200).json({ success: true, message: 'Product deleted successfully' });
   } catch (err) {
     console.error('Delete Product Error:', err);
+    res.status(500).json({ success: false, message: 'Internal Server Error' });
+  }
+};
+
+
+// ✅ TOGGLE STOCK
+export const toggleStock = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const product = await productsModel.findOne({ id });
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+
+    product.inStock = !product.inStock;
+    await product.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Product stock status toggled to ${product.inStock}`,
+      product
+    });
+  } catch (err) {
+    console.error('Toggle Stock Error:', err);
     res.status(500).json({ success: false, message: 'Internal Server Error' });
   }
 };

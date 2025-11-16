@@ -856,6 +856,160 @@ export const updateOrderStatusByAdmin = async (req, res) => {
 };
 
 
+// ✅ UPDATE STORE ORDER STATUS BY ADMIN
+export const updateStoreOrderStatusByAdmin = async (req, res) => {
+  try {
+    const { storeId, orderId } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status is required'
+      });
+    }
+
+    // Validate status for admin
+    const allowedStatuses = ['ORDER_PLACED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'PENDING', 'READY', 'PICKED_UP'];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed statuses: ${allowedStatuses.join(', ')}`
+      });
+    }
+
+    // Find the store by its string id field
+    const store = await storeModel.findOne({ id: storeId });
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        message: 'Store not found'
+      });
+    }
+
+    // Find the order and populate related data
+    const order = await orderModel.findOne({ id: orderId, storeId: store._id })
+      .populate('userId', 'id name email phone')
+      .populate('storeId', 'id name username email');
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found or does not belong to this store"
+      });
+    }
+
+    // Save old status for reference
+    const oldStatus = order.status;
+
+    // Update order status
+    order.status = status;
+    
+    // When order is delivered, payment status should be changed to paid and invoice generated
+    if (status === 'DELIVERED') {
+      order.isPaid = true;
+      
+      // Generate invoice when order is delivered
+      try {
+        await generateInvoice(order);
+        console.log("✅ Invoice generated for delivered order:", order.id);
+      } catch (invoiceError) {
+        console.error("❌ Error generating invoice for order:", order.id, invoiceError);
+        // Don't fail the order update if invoice generation fails
+      }
+    }
+    
+    // When order is cancelled, keep payment status as is (business logic may vary)
+    if (status === 'CANCELLED') {
+      // Optionally handle cancellation logic here
+    }
+
+    await order.save();
+
+    // Send email notifications
+    try {
+      // Professional status update email to customer
+      if (order.userId && order.userId.email) {
+        const emailHtml = emailTemplates.orderStatusUpdate({
+          customerName: order.userId.name,
+          orderId: order.id,
+          oldStatus: oldStatus,
+          newStatus: order.status,
+          totalAmount: order.total,
+          orderItems: order.orderItems.map(item => ({
+            name: item.productId?.name || 'Unknown Product',
+            quantity: item.quantity,
+            images: item.productId?.images || []
+          }))
+        });
+
+        await sendEmail({
+          to: order.userId.email,
+          subject: `Order Status Updated - ${order.id}`,
+          html: emailHtml
+        });
+      }
+
+      // Notify store
+      if (order.storeId && order.storeId.email) {
+        await sendEmail({
+          to: order.storeId.email,
+          subject: `Order Status Updated by Admin - ${order.id}`,
+          html: `
+            <h2>Order Status Update</h2>
+            <p>Hello ${order.storeId.name},</p>
+            <p>The status of order #${order.id} has been updated by admin.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${order.id}</li>
+              <li>Customer: ${order.userId?.name}</li>
+              <li>Old Status: ${oldStatus}</li>
+              <li>New Status: ${status}</li>
+              <li>Total Amount: $${order.total}</li>
+              <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
+            </ul>
+          `
+        });
+      }
+    } catch (emailError) {
+      console.error("❌ Error sending status update emails:", emailError);
+      // Don't fail the status update if email sending fails
+    }
+
+    // Send response
+    res.json({
+      success: true,
+      message: 'Store order status updated successfully',
+      order: {
+        id: order.id,
+        oldStatus,
+        newStatus: order.status,
+        isPaid: order.isPaid,
+        total: order.total,
+        customer: {
+          id: order.userId?.id,
+          name: order.userId?.name,
+          email: order.userId?.email
+        },
+        store: {
+          id: order.storeId?.id,
+          name: order.storeId?.name,
+          username: order.storeId?.username
+        },
+        updatedAt: order.updatedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Update store order status by admin error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Something went wrong while updating store order status'
+    });
+  }
+};
+
+
 // ✅ GET COMPLETE ORDER DETAILS FOR ADMIN
 export const getCompleteOrderDetails = async (req, res) => {
   try {

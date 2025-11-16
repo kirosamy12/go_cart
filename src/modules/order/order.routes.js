@@ -30,7 +30,7 @@ getMyOrders,
    getCompleteOrderDetails,
    // New store functions
    getStoreOrderById
-} from '../order/order.controler.js';
+} from './order.controler.js';
 import { allowTo, isStoreOwner, protectRoutes } from '../Auth/auth.controler.js';
 
 
