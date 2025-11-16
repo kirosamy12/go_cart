@@ -23,6 +23,10 @@ const embeddedOrderItemSchema = new mongoose.Schema({
   selectedSize: {
     type: String,
     default: null  // ← إضافة هذا الحقل للحجم
+  },
+  selectedScent: {
+    type: String,
+    default: null  // ← إضافة هذا الحقل للروائح
   }
 }, { _id: false });
 

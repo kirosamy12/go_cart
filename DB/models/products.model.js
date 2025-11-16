@@ -31,6 +31,17 @@ const productSchema = new mongoose.Schema({
     type: [String],     // 👈 مصفوفة مقاسات مثل ['S', 'M', 'L', 'XL']
     default: []         // 👈 مش إلزامي، فلو المستخدم ما أرسلش مقاسات بتبقى فاضية
   },
+  // New field for scent/smell
+  scents: {
+    type: [String],     // 👈 مصفوفة روائح مثل ['Rose', 'Lavender', 'Vanilla']
+    default: []         // 👈 مش إلزامي
+  },
+  // New field for quantity per size
+  sizeQuantities: {
+    type: Map,
+    of: Number,
+    default: {}
+  },
   category: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',

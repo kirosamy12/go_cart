@@ -37,11 +37,19 @@ const invoiceItemSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  selectedScent: {
+    type: String,
+    default: null
+  },
   availableColors: {
     type: [String],
     default: []
   },
   availableSizes: {
+    type: [String],
+    default: []
+  },
+  availableScents: {
     type: [String],
     default: []
   }

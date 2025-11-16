@@ -20,7 +20,8 @@ const cartSchema = new mongoose.Schema(
           default: 1
         },
         selectedColor: String,
-        selectedSize: String
+        selectedSize: String,
+        selectedScent: String
       }
     ]
   },

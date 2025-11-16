@@ -69,6 +69,10 @@ export const updateCart = async (req, res) => {
       if (item.selectedSize && typeof item.selectedSize !== 'string') {
         return res.status(400).json({ success: false, message: 'Invalid size format' });
       }
+      
+      if (item.selectedScent && typeof item.selectedScent !== 'string') {
+        return res.status(400).json({ success: false, message: 'Invalid scent format' });
+      }
     }
 
     const updated = await cartModel.findOneAndUpdate(
@@ -92,7 +96,7 @@ export const updateCart = async (req, res) => {
 export const addToCart = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { productId, quantity, selectedColor, selectedSize } = req.body;
+    const { productId, quantity, selectedColor, selectedSize, selectedScent } = req.body;
 
     if (!productId || typeof productId !== 'string') {
       return res.status(400).json({ success: false, message: 'Invalid productId format' });
@@ -112,22 +116,23 @@ export const addToCart = async (req, res) => {
     if (!cart) {
       cart = await cartModel.create({
         userId,
-        items: [{ productId, quantity, selectedColor, selectedSize }]
+        items: [{ productId, quantity, selectedColor, selectedSize, selectedScent }]
       });
       return res.status(201).json({ success: true, cart });
     }
 
-    // ✅ لو نفس المنتج ونفس اللون والمقاس موجودين بالفعل، زوّد الكمية
+    // ✅ لو نفس المنتج ونفس اللون والمقاس والرائحة موجودين بالفعل، زوّد الكمية
     const existingItem = cart.items.find(
       item => item.productId === productId && 
               item.selectedColor === selectedColor && 
-              item.selectedSize === selectedSize
+              item.selectedSize === selectedSize &&
+              item.selectedScent === selectedScent
     );
 
     if (existingItem) {
       existingItem.quantity += quantity;
     } else {
-      cart.items.push({ productId, quantity, selectedColor, selectedSize });
+      cart.items.push({ productId, quantity, selectedColor, selectedSize, selectedScent });
     }
 
     await cart.save();
@@ -142,7 +147,7 @@ export const addToCart = async (req, res) => {
 export const removeItemFromCart = async (req, res) => {
   try {
     const userId = req.user._id;
-    const { productId, color, size } = req.params;
+    const { productId, color, size, scent } = req.params;
 
     if (!productId || typeof productId !== 'string') {
       return res.status(400).json({ success: false, message: 'Invalid productId' });
@@ -156,21 +161,55 @@ export const removeItemFromCart = async (req, res) => {
     // Filter items based on what parameters were provided
     const originalLength = cart.items.length;
     
-    if (color && size) {
-      // Remove specific item with color and size
+    if (color && size && scent) {
+      // Remove specific item with color, size, and scent
+      cart.items = cart.items.filter(
+        item => !(item.productId === productId && 
+                  item.selectedColor === color && 
+                  item.selectedSize === size &&
+                  item.selectedScent === scent)
+      );
+    } else if (color && size) {
+      // Remove items with specific color and size (no scent specified)
       cart.items = cart.items.filter(
         item => !(item.productId === productId && 
                   item.selectedColor === color && 
                   item.selectedSize === size)
       );
+    } else if (color && scent) {
+      // Remove items with specific color and scent (no size specified)
+      cart.items = cart.items.filter(
+        item => !(item.productId === productId && 
+                  item.selectedColor === color && 
+                  item.selectedScent === scent)
+      );
+    } else if (size && scent) {
+      // Remove items with specific size and scent (no color specified)
+      cart.items = cart.items.filter(
+        item => !(item.productId === productId && 
+                  item.selectedSize === size && 
+                  item.selectedScent === scent)
+      );
     } else if (color) {
-      // Remove items with specific color (no size specified)
+      // Remove items with specific color (no size or scent specified)
       cart.items = cart.items.filter(
         item => !(item.productId === productId && 
                   item.selectedColor === color)
       );
+    } else if (size) {
+      // Remove items with specific size (no color or scent specified)
+      cart.items = cart.items.filter(
+        item => !(item.productId === productId && 
+                  item.selectedSize === size)
+      );
+    } else if (scent) {
+      // Remove items with specific scent (no color or size specified)
+      cart.items = cart.items.filter(
+        item => !(item.productId === productId && 
+                  item.selectedScent === scent)
+      );
     } else {
-      // Remove all items with this productId (no color/size specified)
+      // Remove all items with this productId (no color/size/scent specified)
       cart.items = cart.items.filter(
         item => !(item.productId === productId)
       );

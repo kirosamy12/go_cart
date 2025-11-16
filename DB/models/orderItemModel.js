@@ -28,6 +28,10 @@ const orderItemSchema = new mongoose.Schema({
   selectedSize: {
     type: String,
     default: null
+  },
+  selectedScent: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true

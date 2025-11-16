@@ -79,6 +79,7 @@ export const createOrder = async (req, res) => {
           price: product.price,
           selectedColor: item.selectedColor || null,
           selectedSize: item.selectedSize || null,
+          selectedScent: item.selectedScent || null,
           storeId: product.storeId,
         };
       })
@@ -107,7 +108,7 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // ✅ إنشاء الأوردر
+    // ✅ إنشاء الأورダー
     const newOrder = await orderModel.create({
       id: Math.random().toString(36).substr(2, 9) + Date.now().toString(36),
       userId,
@@ -123,6 +124,7 @@ export const createOrder = async (req, res) => {
         price: i.price,
         selectedColor: i.selectedColor,
         selectedSize: i.selectedSize,
+        selectedScent: i.selectedScent,
       })),
       status: "ORDER_PLACED",
       isPaid: false,
@@ -1180,9 +1182,18 @@ export const updateOrderStatusAsAdmin = async (req, res) => {
     // Update order status
     order.status = status;
     
-    // When order is delivered, payment status should be changed to paid
+    // When order is delivered, payment status should be changed to paid and invoice generated
     if (status === 'DELIVERED') {
       order.isPaid = true;
+      
+      // Generate invoice when order is delivered
+      try {
+        await generateInvoice(order);
+        console.log("✅ Invoice generated for delivered order:", order.id);
+      } catch (invoiceError) {
+        console.error("❌ Error generating invoice for order:", order.id, invoiceError);
+        // Don't fail the order update if invoice generation fails
+      }
     }
     
     // When order is cancelled, keep payment status as is (business logic may vary)
@@ -1290,7 +1301,7 @@ export const getOrderTracking = async (req, res) => {
     const order = await orderModel.findOne({ id: orderId })
       .populate('storeId', 'id name username logo contact')
       .populate('addressId', 'street city state country phone')
-      .populate('orderItems.productId', 'id name images colors sizes'); // ← إضافة colors و sizes
+      .populate('orderItems.productId', 'id name images colors sizes scents'); // ← إضافة colors, sizes, و scents
 
     if (!order) {
       return res.status(404).json({
@@ -1391,12 +1402,14 @@ export const getOrderTracking = async (req, res) => {
             name: item.productId.name,
             images: item.productId.images,
             colors: item.productId.colors,
-            sizes: item.productId.sizes
+            sizes: item.productId.sizes,
+            scents: item.productId.scents
           },
           quantity: item.quantity,
           price: item.price,
           selectedColor: item.selectedColor,
           selectedSize: item.selectedSize,
+          selectedScent: item.selectedScent,
           lineTotal: item.price * item.quantity
         })),
         
@@ -1442,7 +1455,7 @@ export const getAdminStoreOrders = async (req, res) => {
       orderModel.find(orderFilter)
         .populate('userId', 'id name email phone')
         .populate('addressId', 'street city state country phone')
-        .populate('orderItems.productId', 'id name images price colors sizes')
+        .populate('orderItems.productId', 'id name images price colors sizes scents')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit, 10))
@@ -1570,7 +1583,7 @@ export const getMyOrders = async (req, res) => {
     const [stores, addresses, products] = await Promise.all([
       storeModel.find({ _id: { $in: storeIds } }).lean(),
       addressModel.find({ _id: { $in: addressIds } }).lean(),
-      productModel.find({ _id: { $in: productIds } }).lean() // ← جلب المنتجات مع colors و sizes
+      productModel.find({ _id: { $in: productIds } }).lean() // ← جلب المنتجات مع colors, sizes, و scents
     ]);
 
     const storeMap = {};
@@ -1599,12 +1612,14 @@ export const getMyOrders = async (req, res) => {
             name: product.name,
             images: product.images,
             colors: product.colors, // ← الألوان المتاحة
-            sizes: product.sizes // ← المقاسات المتاحة
-          } : null,
-          quantity: item.quantity,
-          price: item.price,
-          selectedColor: item.selectedColor, // ← اللون المختار
-          selectedSize: item.selectedSize // ← المقاس المختار
+            sizes: product.sizes, // ← المقاسات المتاحة
+            scents: product.scents // ← الروائح المتاحة
+          } : { id: i.productId },
+          quantity: i.quantity,
+          price: i.price,
+          selectedColor: i.selectedColor, // ← اللون المختار
+          selectedSize: i.selectedSize, // ← المقاس المختار
+          selectedScent: i.selectedScent // ← الرائحة المختارة
         };
       })
     }));
@@ -1703,6 +1718,111 @@ export const trackOrder = async (req, res) => {
   }
 };
 
+
+// ✅ GENERATE INVOICE WHEN ORDER IS DELIVERED
+const generateInvoice = async (order) => {
+  try {
+    console.log("🧾 Generating invoice for order:", order.id);
+    
+    // Get customer and store details
+    const customer = await userModel.findById(order.userId);
+    const store = await storeModel.findById(order.storeId);
+    const address = await addressModel.findById(order.addressId);
+    
+    if (!customer || !store || !address) {
+      throw new Error('Missing required data for invoice generation');
+    }
+    
+    // Prepare order items for invoice
+    const invoiceItems = await Promise.all(order.orderItems.map(async (item) => {
+      // Get product details
+      const product = await productModel.findById(item.productId);
+      
+      return {
+        productId: item.productId,
+        name: product?.name || 'Unknown Product',
+        images: product?.images || [],
+        quantity: item.quantity,
+        unitPrice: item.price,
+        lineTotal: item.price * item.quantity,
+        selectedColor: item.selectedColor || null,
+        selectedSize: item.selectedSize || null,
+        selectedScent: item.selectedScent || null,
+        availableColors: product?.colors || [],
+        availableSizes: product?.sizes || [],
+        availableScents: product?.scents || []
+      };
+    }));
+    
+    // Calculate totals
+    const subtotal = invoiceItems.reduce((sum, item) => sum + item.lineTotal, 0);
+    
+    // Create invoice
+    const invoice = new invoiceModel({
+      orderId: order._id,
+      userId: order.userId,
+      storeId: order.storeId,
+      items: invoiceItems,
+      subtotal: subtotal,
+      total: order.total,
+      billingAddress: {
+        name: address.name,
+        email: address.email,
+        street: address.street,
+        city: address.city,
+        state: address.state,
+        zip: address.zip,
+        country: address.country,
+        phone: address.phone
+      },
+      sellerInfo: {
+        name: store.name,
+        username: store.username,
+        email: store.email,
+        contact: store.contact,
+        address: store.address
+      },
+      buyerInfo: {
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone
+      },
+      paymentMethod: order.paymentMethod,
+      orderStatus: order.status,
+      orderCreatedAt: order.createdAt,
+      orderDeliveredAt: order.updatedAt,
+      status: 'paid'
+    });
+    
+    const savedInvoice = await invoice.save();
+    console.log("✅ Invoice generated successfully:", savedInvoice.invoiceNumber);
+    
+    // Send invoice email to customer
+    try {
+      await sendEmail({
+        to: customer.email,
+        subject: `Invoice ${savedInvoice.invoiceNumber} - Order ${order.id}`,
+        html: `
+          <h2>Invoice ${savedInvoice.invoiceNumber}</h2>
+          <p>Dear ${customer.name},</p>
+          <p>Thank you for your order. Please find your invoice attached.</p>
+          <p><strong>Order ID:</strong> ${order.id}</p>
+          <p><strong>Invoice Total:</strong> $${savedInvoice.total}</p>
+          <p><strong>Payment Method:</strong> ${savedInvoice.paymentMethod}</p>
+          <p>Thank you for shopping with us!</p>
+        `
+      });
+      console.log("📧 Invoice email sent to customer:", customer.email);
+    } catch (emailError) {
+      console.error("❌ Error sending invoice email:", emailError);
+    }
+    
+    return savedInvoice;
+  } catch (error) {
+    console.error("❌ Error generating invoice:", error);
+    throw error;
+  }
+};
 
 // ✅ GET INVOICES
 export const getInvoices = async (req, res) => {
@@ -2202,12 +2322,14 @@ export const getStoreSuccessfulOrderById = async (req, res) => {
           images: item.productId.images,
           price: item.productId.price,
           colors: item.productId.colors,
-          sizes: item.productId.sizes
+          sizes: item.productId.sizes,
+          scents: item.productId.scents
         },
         quantity: item.quantity,
         price: item.price,
         selectedColor: item.selectedColor,
         selectedSize: item.selectedSize,
+        selectedScent: item.selectedScent,
         lineTotal: item.price * item.quantity
       }))
     };
