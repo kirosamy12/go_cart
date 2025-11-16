@@ -15,9 +15,9 @@ const sendEmail = async ({from = process.env.EMAIL_USER, to, subject, text, html
 
     try {
         await transporter.sendMail({
-            from: "shopverse <noreply@shopverse.com>",
+            from: "Shopverse <noreply@shopverse.com>",
             to,
-            subject,
+            subject: `[Shopverse] ${subject}`,
             text,
             html,
         })

@@ -8,6 +8,8 @@ import addressModel from "../../../DB/models/address.model.js";
 import couponModel from "../../../DB/models/coupon.model.js";
 import invoiceModel from "../../../DB/models/invoice.model.js";
 import sendEmail from "../../utils/sendEmail.js";
+import { emailTemplates } from "../../utils/emailTemplates.js"; // Import professional email templates
+
 const ObjectId = mongoose.Types.ObjectId;
 
 const toStr = v => (v ? v.toString() : v);
@@ -33,138 +35,173 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(addressId)) {
-      return res.status(400).json({ success: false, message: "Invalid address ID format" });
-    }
-
-    const address = await addressModel.findById(addressId);
-    if (!address) {
-      return res.status(404).json({ success: false, message: "Address not found" });
-    }
-
-    const cart = await cartModel.findOne({ userId: userId.toString() });
-    if (!cart) {
-      return res.status(400).json({ success: false, message: "Cart not found" });
-    }
-
-    if (!cart.items || !Array.isArray(cart.items) || cart.items.length === 0) {
-      return res.status(400).json({ success: false, message: "Your cart is empty" });
-    }
-
-    // ✅ جمع تفاصيل المنتجات
-    const orderItems = await Promise.all(
-      cart.items.map(async (item) => {
-        let product;
-
-        if (mongoose.Types.ObjectId.isValid(item.productId)) {
-          product = await productModel.findById(item.productId);
-        }
-
-        if (!product) {
-          product = await productModel.findOne({
-            $or: [
-              { id: item.productId },
-              { slug: item.productId },
-              { sku: item.productId },
-            ],
-          });
-        }
-
-        if (!product) throw new Error(`Product ${item.productId} not found`);
-        if (!product.storeId) throw new Error(`Product ${product.name} doesn't have a storeId`);
-
-        return {
-          productId: product._id,
-          quantity: item.quantity,
-          price: product.price,
-          selectedColor: item.selectedColor || null,
-          selectedSize: item.selectedSize || null,
-          selectedScent: item.selectedScent || null,
-          storeId: product.storeId,
-        };
-      })
-    );
-
-    // ✅ تأكد أن كل المنتجات من نفس الـ store
-    const storeIds = [...new Set(orderItems.map((i) => i.storeId.toString()))];
-    if (storeIds.length > 1) {
+    // Get user cart
+    const cart = await cartModel.findOne({ userId }).populate('items.productId');
+    if (!cart || cart.items.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Cannot create order with products from multiple stores.",
+        message: "Cart is empty",
       });
     }
 
-    const storeId = orderItems[0].storeId;
-    const total = orderItems.reduce((acc, i) => acc + i.price * i.quantity, 0);
-
-    // ✅ معالجة الكوبون
-    let couponData = {};
-    let isCouponUsed = false;
-    if (couponCode) {
-      const coupon = await couponModel.findOne({ code: couponCode, isActive: true });
-      if (coupon) {
-        isCouponUsed = true;
-        couponData = { code: coupon.code, discount: coupon.discount };
-      }
+    // Get address
+    const address = await addressModel.findById(addressId);
+    if (!address) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid address",
+      });
     }
 
-    // ✅ إنشاء الأورダー
-    const newOrder = await orderModel.create({
-      id: Math.random().toString(36).substr(2, 9) + Date.now().toString(36),
-      userId,
-      storeId,
-      addressId,
-      paymentMethod,
-      total,
-      isCouponUsed,
-      coupon: couponData,
-      orderItems: orderItems.map((i) => ({
-        productId: i.productId,
-        quantity: i.quantity,
-        price: i.price,
-        selectedColor: i.selectedColor,
-        selectedSize: i.selectedSize,
-        selectedScent: i.selectedScent,
-      })),
-      status: "ORDER_PLACED",
-      isPaid: false,
-    });
-
-    // ✅ فضي الكارت
-    cart.items = [];
-    await cart.save();
-
-    // ✅ إرسال الإيميلات
-    try {
-      const customer = await userModel.findById(userId);
-      const store = await storeModel.findById(storeId);
-      const adminEmail = process.env.ADMIN_EMAIL || "kirosamy2344@gmail.com";
-
-      console.log("📧 Sending emails...");
-      console.log("Customer email:", customer?.email);
-      console.log("Store email:", store?.email);
-
-      // إيميل العميل
-      if (customer && customer.email) {
-        await sendEmail({
-          to: customer.email,
-          subject: "Order Confirmation",
-          html: `
-            <h2>Order Confirmation</h2>
-            <p>Dear ${customer.name},</p>
-            <p>Your order #${newOrder.id} has been successfully placed.</p>
-            <ul>
-              <li>Order ID: ${newOrder.id}</li>
-              <li>Total Amount: $${newOrder.total}</li>
-              <li>Payment Method: ${newOrder.paymentMethod}</li>
-              <li>Status: ${newOrder.status}</li>
-            </ul>
-            <p>Thank you for your purchase!</p>
-          `,
+    // Validate cart items and check stock
+    for (const item of cart.items) {
+      const product = await productModel.findById(item.productId._id || item.productId);
+      if (!product) {
+        return res.status(400).json({
+          success: false,
+          message: `Product not found: ${item.productId.name}`,
         });
       }
 
-      // إيميل المتجر
+      // Check if product has enough stock
+      if (!product.inStock) {
+        return res.status(400).json({
+          success: false,
+          message: `Product out of stock: ${product.name}`,
+        });
+      }
+
+      // Check quantity against available stock
+      if (item.quantity > product.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Not enough stock for ${product.name}. Available: ${product.quantity}, Requested: ${item.quantity}`,
+        });
+      }
+    }
+
+    // Process coupon if provided
+    let coupon = null;
+    let discount = 0;
+    if (couponCode) {
+      coupon = await couponModel.findOne({ code: couponCode, isActive: true });
+      if (!coupon) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid or inactive coupon code",
+        });
+      }
+
+      // Check if coupon is expired
+      if (coupon.expiryDate && coupon.expiryDate < new Date()) {
+        return res.status(400).json({
+          success: false,
+          message: "Coupon has expired",
+        });
+      }
+
+      // Check if coupon usage limit is reached
+      if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
+        return res.status(400).json({
+          success: false,
+          message: "Coupon usage limit reached",
+        });
+      }
+    }
+
+    // Calculate order total
+    let subtotal = 0;
+    const orderItems = [];
+
+    for (const item of cart.items) {
+      const product = await productModel.findById(item.productId._id || item.productId);
+      const itemTotal = item.quantity * product.price;
+      subtotal += itemTotal;
+
+      orderItems.push({
+        productId: product._id,
+        quantity: item.quantity,
+        price: product.price,
+        selectedColor: item.selectedColor || null,
+        selectedSize: item.selectedSize || null,
+        selectedScent: item.selectedScent || null
+      });
+    }
+
+    // Apply coupon discount if valid
+    if (coupon) {
+      discount = (subtotal * coupon.discountPercentage) / 100;
+    }
+
+    const total = subtotal - discount;
+
+    // Create order
+    const newOrder = new orderModel({
+      id: generateId(),
+      userId,
+      storeId: cart.items[0].productId.storeId, // Assuming all items are from the same store
+      addressId,
+      orderItems,
+      total,
+      subtotal,
+      paymentMethod,
+      isPaid: paymentMethod === "CASH" ? false : true,
+      isCouponUsed: !!coupon,
+      coupon: coupon ? {
+        code: coupon.code,
+        discountPercentage: coupon.discountPercentage,
+        discountAmount: discount
+      } : null
+    });
+
+    await newOrder.save();
+
+    // Clear cart
+    await cartModel.findOneAndDelete({ userId });
+
+    // Update coupon usage if used
+    if (coupon) {
+      coupon.usedCount += 1;
+      await coupon.save();
+    }
+
+    // Send email notifications
+    try {
+      const customer = await userModel.findById(userId);
+      const store = await storeModel.findById(newOrder.storeId);
+
+      console.log("📧 Preparing to send order confirmation emails...");
+      console.log("Customer email:", customer?.email);
+      console.log("Store email:", store?.email);
+
+      // Professional Order Confirmation Email to Customer
+      if (customer && customer.email) {
+        const emailHtml = emailTemplates.orderConfirmation({
+          customerName: customer.name,
+          orderId: newOrder.id,
+          totalAmount: newOrder.total,
+          paymentMethod: newOrder.paymentMethod,
+          orderItems: newOrder.orderItems.map(item => ({
+            name: item.productId?.name || 'Unknown Product',
+            quantity: item.quantity,
+            unitPrice: item.price,
+            lineTotal: item.price * item.quantity,
+            selectedColor: item.selectedColor,
+            selectedSize: item.selectedSize,
+            selectedScent: item.selectedScent,
+            images: item.productId?.images || []
+          })),
+          orderDate: newOrder.createdAt
+        });
+
+        await sendEmail({
+          to: customer.email,
+          subject: `Order Confirmation - ${newOrder.id}`,
+          html: emailHtml,
+        });
+      }
+
+      // Email to Store
       if (store && store.email) {
         await sendEmail({
           to: store.email,
@@ -182,8 +219,7 @@ export const createOrder = async (req, res) => {
         });
       }
 
-      // إيميل الأدمن
-      // Get all admin users and send email to each
+      // Email to Admins
       const adminUsers = await userModel.find({ role: 'admin' });
       console.log("📧 Preparing to send order confirmation emails to admins...");
       console.log("📧 Admin users found:", adminUsers.length);
@@ -546,84 +582,83 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // Only allow store owners to set these specific statuses
-    const validStoreStatuses = ["PENDING", "READY", "PICKED_UP"];
-    
-    if (!validStoreStatuses.includes(status)) {
+    // Validate status - store owners can only update to specific statuses
+    const allowedStatuses = ['PENDING', 'READY', 'PICKED_UP'];
+    if (!allowedStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid status. Store owners can only set: ${validStoreStatuses.join(', ')}`
+        message: `Store owners can only update status to: ${allowedStatuses.join(', ')}`
       });
     }
 
-    const userId = req.user.id;
-    const store = await storeModel.findOne({ userId });
-    
-    if (!store) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have a store'
-      });
-    }
-
-    const storeId = store._id.toString();
-
-    const order = await orderModel.findOne({ 
-      id: orderId,
-      storeId: storeId
-    });
-
+    // Find the order
+    const order = await orderModel.findOne({ id: orderId });
     if (!order) {
       return res.status(404).json({
         success: false,
-        message: 'Order not found or does not belong to your store'
+        message: "Order not found"
       });
     }
 
-    if (order.status === 'cancelled' || order.status === 'CANCELLED') {
-      return res.status(400).json({
+    // Check if the store owner owns this order
+    const store = await storeModel.findOne({ userId: req.user._id });
+    if (!store || order.storeId.toString() !== store._id.toString()) {
+      return res.status(403).json({
         success: false,
-        message: 'Cannot update status of cancelled order'
+        message: "You don't have permission to update this order"
       });
     }
 
-    // Fix case sensitivity issue - convert both to uppercase for comparison
-    if (order.status.toUpperCase() === 'DELIVERED' && status.toUpperCase() !== 'DELIVERED') {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot change status of delivered order'
-      });
-    }
-
+    // Save old status for reference
     const oldStatus = order.status;
+
+    // Update order status
     order.status = status;
-    
     await order.save();
 
-    // ✅ Send email notifications to admin when store updates order status
+    // Get customer and store details for email
+    const customer = await userModel.findById(order.userId);
+    const storeDetails = await storeModel.findById(order.storeId);
+
+    // Send professional status update email to customer
     try {
-      // Get all admin users
+      if (customer && customer.email) {
+        const emailHtml = emailTemplates.orderStatusUpdate({
+          customerName: customer.name,
+          orderId: order.id,
+          oldStatus: oldStatus,
+          newStatus: order.status,
+          totalAmount: order.total,
+          orderItems: order.orderItems.map(item => ({
+            name: item.productId?.name || 'Unknown Product',
+            quantity: item.quantity,
+            images: item.productId?.images || []
+          }))
+        });
+
+        await sendEmail({
+          to: customer.email,
+          subject: `Order Status Updated - ${order.id}`,
+          html: emailHtml
+        });
+      }
+
+      // Notify admins about the status update
       const adminUsers = await userModel.find({ role: 'admin' });
-      
-      console.log("📧 Preparing to send status update emails to admins...");
-      console.log("📧 Admin users found:", adminUsers.length);
-      console.log("📧 Admin user emails:", adminUsers.map(admin => admin.email));
-      
-      // Email to all admins
       if (adminUsers && adminUsers.length > 0) {
         for (const admin of adminUsers) {
           if (admin.email) {
             try {
               await sendEmail({
                 to: admin.email,
-                subject: `Store Updated Order Status - ${orderId}`,
+                subject: `Order Status Updated by Store - ${order.id}`,
                 html: `
-                  <h2>Order Status Update by Store</h2>
-                  <p>Store ${store.name} has updated the status of order #${orderId}.</p>
+                  <h2>Order Status Update</h2>
+                  <p>Store ${storeDetails.name} has updated the status of order #${orderId}.</p>
                   <p><strong>Order Details:</strong></p>
                   <ul>
                     <li>Order ID: ${orderId}</li>
-                    <li>Store: ${store.name} (${store.username})</li>
+                    <li>Store: ${storeDetails.name} (${storeDetails.username})</li>
                     <li>Old Status: ${oldStatus}</li>
                     <li>New Status: ${status}</li>
                     <li>Total Amount: $${order.total}</li>
@@ -653,26 +688,33 @@ export const updateOrderStatus = async (req, res) => {
         status: order.status,
         paymentMethod: order.paymentMethod,
         isPaid: order.isPaid,
-        isCouponUsed: order.isCouponUsed,
-        coupon: order.coupon,
-        createdAt: order.createdAt,
+        customer: {
+          id: customer?.id,
+          name: customer?.name,
+          email: customer?.email
+        },
+        store: {
+          id: storeDetails?.id,
+          name: storeDetails?.name,
+          username: storeDetails?.username
+        },
+        updatedAt: order.updatedAt
       },
     });
   } catch (error) {
-    console.error("❌ Error updating order status:", error);
-    return res.status(500).json({
+    console.error('❌ Update store order status error:', error);
+    res.status(500).json({
       success: false,
-      message: "Server error",
-      error: error.message,
+      message: 'Something went wrong while updating order status'
     });
   }
 };
 
 
-// ✅ UPDATE STORE ORDER STATUS BY ADMIN
-export const updateStoreOrderStatusByAdmin = async (req, res) => {
+// ✅ UPDATE ORDER STATUS BY ADMIN (Full Status Control)
+export const updateOrderStatusByAdmin = async (req, res) => {
   try {
-    const { storeId, orderId } = req.params;
+    const { orderId } = req.params;
     const { status } = req.body;
 
     if (!status) {
@@ -682,34 +724,24 @@ export const updateStoreOrderStatusByAdmin = async (req, res) => {
       });
     }
 
-    // Admins can update to any valid status
-    const validStatuses = ["ORDER_PLACED", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"];
-    
-    if (!validStatuses.includes(status)) {
+    // Validate status for admin
+    const allowedStatuses = ['ORDER_PLACED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'PENDING', 'READY', 'PICKED_UP'];
+    if (!allowedStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid status. Valid statuses are: ${validStatuses.join(', ')}`
+        message: `Invalid status. Allowed statuses: ${allowedStatuses.join(', ')}`
       });
     }
 
-    // Find the store by its string id field
-    const store = await storeModel.findOne({ id: storeId });
-    if (!store) {
-      return res.status(404).json({
-        success: false,
-        message: 'Store not found'
-      });
-    }
-
-    // Find the order by ID with populated data, matching the store's MongoDB _id
-    const order = await orderModel.findOne({ id: orderId, storeId: store._id })
-      .populate('userId', 'id name email')
+    // Find the order and populate related data
+    const order = await orderModel.findOne({ id: orderId })
+      .populate('userId', 'id name email phone')
       .populate('storeId', 'id name username email');
     
     if (!order) {
       return res.status(404).json({
         success: false,
-        message: 'Order not found or does not belong to this store'
+        message: "Order not found"
       });
     }
 
@@ -719,9 +751,18 @@ export const updateStoreOrderStatusByAdmin = async (req, res) => {
     // Update order status
     order.status = status;
     
-    // When order is delivered, payment status should be changed to paid
+    // When order is delivered, payment status should be changed to paid and invoice generated
     if (status === 'DELIVERED') {
       order.isPaid = true;
+      
+      // Generate invoice when order is delivered
+      try {
+        await generateInvoice(order);
+        console.log("✅ Invoice generated for delivered order:", order.id);
+      } catch (invoiceError) {
+        console.error("❌ Error generating invoice for order:", order.id, invoiceError);
+        // Don't fail the order update if invoice generation fails
+      }
     }
     
     // When order is cancelled, keep payment status as is (business logic may vary)
@@ -733,26 +774,25 @@ export const updateStoreOrderStatusByAdmin = async (req, res) => {
 
     // Send email notifications
     try {
-      // Notify customer
+      // Professional status update email to customer
       if (order.userId && order.userId.email) {
+        const emailHtml = emailTemplates.orderStatusUpdate({
+          customerName: order.userId.name,
+          orderId: order.id,
+          oldStatus: oldStatus,
+          newStatus: order.status,
+          totalAmount: order.total,
+          orderItems: order.orderItems.map(item => ({
+            name: item.productId?.name || 'Unknown Product',
+            quantity: item.quantity,
+            images: item.productId?.images || []
+          }))
+        });
+
         await sendEmail({
           to: order.userId.email,
           subject: `Order Status Updated - ${order.id}`,
-          html: `
-            <h2>Order Status Update</h2>
-            <p>Dear ${order.userId.name},</p>
-            <p>The status of your order #${order.id} has been updated by admin.</p>
-            <p><strong>Order Details:</strong></p>
-            <ul>
-              <li>Order ID: ${order.id}</li>
-              <li>Store: ${order.storeId.name}</li>
-              <li>Old Status: ${oldStatus}</li>
-              <li>New Status: ${order.status}</li>
-              <li>Total Amount: $${order.total}</li>
-              <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
-            </ul>
-            <p>Thank you for shopping with us!</p>
-          `
+          html: emailHtml
         });
       }
 
@@ -1764,7 +1804,7 @@ const generateInvoice = async (order) => {
       storeId: order.storeId,
       items: invoiceItems,
       subtotal: subtotal,
-      total: order.total,
+      total: subtotal, // For now, total equals subtotal (no tax in this system)
       billingAddress: {
         name: address.name,
         email: address.email,
@@ -1797,24 +1837,27 @@ const generateInvoice = async (order) => {
     const savedInvoice = await invoice.save();
     console.log("✅ Invoice generated successfully:", savedInvoice.invoiceNumber);
     
-    // Send invoice email to customer
+    // Send professional invoice email to customer
     try {
+      const emailHtml = emailTemplates.invoice({
+        customerName: customer.name,
+        invoiceNumber: savedInvoice.invoiceNumber,
+        orderId: order.id,
+        totalAmount: savedInvoice.total,
+        paymentMethod: savedInvoice.paymentMethod,
+        orderItems: savedInvoice.items,
+        orderDate: savedInvoice.orderCreatedAt,
+        dueDate: null // No due date for paid invoices
+      });
+
       await sendEmail({
         to: customer.email,
         subject: `Invoice ${savedInvoice.invoiceNumber} - Order ${order.id}`,
-        html: `
-          <h2>Invoice ${savedInvoice.invoiceNumber}</h2>
-          <p>Dear ${customer.name},</p>
-          <p>Thank you for your order. Please find your invoice attached.</p>
-          <p><strong>Order ID:</strong> ${order.id}</p>
-          <p><strong>Invoice Total:</strong> $${savedInvoice.total}</p>
-          <p><strong>Payment Method:</strong> ${savedInvoice.paymentMethod}</p>
-          <p>Thank you for shopping with us!</p>
-        `
+        html: emailHtml
       });
-      console.log("📧 Invoice email sent to customer:", customer.email);
+      console.log("📧 Professional invoice email sent to customer:", customer.email);
     } catch (emailError) {
-      console.error("❌ Error sending invoice email:", emailError);
+      console.error("❌ Error sending professional invoice email:", emailError);
     }
     
     return savedInvoice;
