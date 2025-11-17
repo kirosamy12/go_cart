@@ -13,10 +13,11 @@ export const createProduct = async (req, res) => {
       mrp,
       price,
       images,
-      colors,          // ← الألوان اختيارية
-      sizes,           // ← المقاسات اختيارية
-      scents,          // ← الروائح اختيارية
-      sizeQuantities,  // ← الكميات لكل مقاس اختيارية
+      colors,              // ← الألوان اختيارية
+      sizes,               // ← المقاسات اختيارية
+      scents,              // ← الروائح اختيارية
+      sizeQuantities,      // ← الكميات لكل مقاس اختيارية
+      colorSizeQuantities, // ← الكميات لكل لون ومقاس اختيارية
       category,
       inStock
     } = req.body;
@@ -67,6 +68,20 @@ export const createProduct = async (req, res) => {
       }
     }
 
+    // ✅ معالجة colorSizeQuantities إذا كان string أو object
+    let processedColorSizeQuantities = {};
+    if (colorSizeQuantities) {
+      if (typeof colorSizeQuantities === 'string') {
+        try {
+          processedColorSizeQuantities = JSON.parse(colorSizeQuantities);
+        } catch (e) {
+          console.error('Invalid colorSizeQuantities format:', e);
+        }
+      } else if (typeof colorSizeQuantities === 'object') {
+        processedColorSizeQuantities = colorSizeQuantities;
+      }
+    }
+
     const product = new productsModel({
       id: nanoid(10),
       name,
@@ -76,8 +91,9 @@ export const createProduct = async (req, res) => {
       images,
       colors: colors || [],
       sizes: sizes || [],
-      scents: scents || [],              // ← إضافة الروائح
-      sizeQuantities: processedSizeQuantities, // ← إضافة الكميات
+      scents: scents || [],                         // ← إضافة الروائح
+      sizeQuantities: processedSizeQuantities,      // ← إضافة الكميات حسب المقاس
+      colorSizeQuantities: processedColorSizeQuantities, // ← إضافة الكميات حسب اللون والمقاس
       category,
       inStock: inStock !== undefined ? inStock : true,
       storeId: store._id
@@ -296,8 +312,9 @@ export const updateProduct = async (req, res) => {
       'images',
       'colors',
       'sizes',
-      'scents',          // ← إضافة scents
-      'sizeQuantities',  // ← إضافة sizeQuantities
+      'scents',              // ← إضافة scents
+      'sizeQuantities',      // ← إضافة sizeQuantities
+      'colorSizeQuantities', // ← إضافة colorSizeQuantities
       'category',
       'inStock',
       'storeId'
@@ -381,6 +398,27 @@ export const updateProduct = async (req, res) => {
         return res.status(400).json({
           success: false,
           message: 'sizeQuantities must be an object'
+        });
+      }
+    }
+
+    // ✅ معالجة colorSizeQuantities
+    if (updates.colorSizeQuantities) {
+      if (typeof updates.colorSizeQuantities === 'string') {
+        try {
+          updates.colorSizeQuantities = JSON.parse(updates.colorSizeQuantities);
+        } catch (e) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid colorSizeQuantities format'
+          });
+        }
+      }
+      
+      if (typeof updates.colorSizeQuantities !== 'object') {
+        return res.status(400).json({
+          success: false,
+          message: 'colorSizeQuantities must be an object'
         });
       }
     }
