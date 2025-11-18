@@ -127,11 +127,50 @@ export const getAllProducts = async (req, res) => {
       })
       .sort({ createdAt: -1 });
 
+    // Ensure colors, sizes, and scents are proper arrays in the response
+    const formattedProducts = products.map(product => {
+      const productObj = product.toObject();
+      
+      // Process colors
+      if (productObj.colors && typeof productObj.colors === 'string') {
+        try {
+          productObj.colors = JSON.parse(productObj.colors);
+        } catch (e) {
+          productObj.colors = productObj.colors.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Process sizes
+      if (productObj.sizes && typeof productObj.sizes === 'string') {
+        try {
+          productObj.sizes = JSON.parse(productObj.sizes);
+        } catch (e) {
+          productObj.sizes = productObj.sizes.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Process scents
+      if (productObj.scents && typeof productObj.scents === 'string') {
+        try {
+          productObj.scents = JSON.parse(productObj.scents);
+        } catch (e) {
+          productObj.scents = productObj.scents.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Ensure they are arrays
+      if (!Array.isArray(productObj.colors)) productObj.colors = [];
+      if (!Array.isArray(productObj.sizes)) productObj.sizes = [];
+      if (!Array.isArray(productObj.scents)) productObj.scents = [];
+      
+      return productObj;
+    });
+
     res.status(200).json({
       success: true,
       message: 'Products fetched successfully',
-      count: products.length,
-      products: products || []
+      count: formattedProducts.length,
+      products: formattedProducts || []
     });
   } catch (err) {
     console.error('Get Products Error:', err.message);
@@ -169,11 +208,50 @@ export const getProductsByCategory = async (req, res) => {
       })
       .sort({ createdAt: -1 });
 
+    // Ensure colors, sizes, and scents are proper arrays in the response
+    const formattedProducts = products.map(product => {
+      const productObj = product.toObject();
+      
+      // Process colors
+      if (productObj.colors && typeof productObj.colors === 'string') {
+        try {
+          productObj.colors = JSON.parse(productObj.colors);
+        } catch (e) {
+          productObj.colors = productObj.colors.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Process sizes
+      if (productObj.sizes && typeof productObj.sizes === 'string') {
+        try {
+          productObj.sizes = JSON.parse(productObj.sizes);
+        } catch (e) {
+          productObj.sizes = productObj.sizes.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Process scents
+      if (productObj.scents && typeof productObj.scents === 'string') {
+        try {
+          productObj.scents = JSON.parse(productObj.scents);
+        } catch (e) {
+          productObj.scents = productObj.scents.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Ensure they are arrays
+      if (!Array.isArray(productObj.colors)) productObj.colors = [];
+      if (!Array.isArray(productObj.sizes)) productObj.sizes = [];
+      if (!Array.isArray(productObj.scents)) productObj.scents = [];
+      
+      return productObj;
+    });
+
     res.status(200).json({
       success: true,
       message: 'Products in the same category fetched successfully',
-      count: products.length,
-      products: products || [],
+      count: formattedProducts.length,
+      products: formattedProducts || [],
     });
   } catch (err) {
     console.error('Get Products by Category Error:', err.message);
@@ -199,7 +277,42 @@ export const getProductById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    res.status(200).json({ success: true, product });
+    // Convert to object and ensure arrays are properly formatted
+    const productObj = product.toObject();
+    
+    // Process colors
+    if (productObj.colors && typeof productObj.colors === 'string') {
+      try {
+        productObj.colors = JSON.parse(productObj.colors);
+      } catch (e) {
+        productObj.colors = productObj.colors.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+      }
+    }
+    
+    // Process sizes
+    if (productObj.sizes && typeof productObj.sizes === 'string') {
+      try {
+        productObj.sizes = JSON.parse(productObj.sizes);
+      } catch (e) {
+        productObj.sizes = productObj.sizes.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+      }
+    }
+    
+    // Process scents
+    if (productObj.scents && typeof productObj.scents === 'string') {
+      try {
+        productObj.scents = JSON.parse(productObj.scents);
+      } catch (e) {
+        productObj.scents = productObj.scents.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+      }
+    }
+    
+    // Ensure they are arrays
+    if (!Array.isArray(productObj.colors)) productObj.colors = [];
+    if (!Array.isArray(productObj.sizes)) productObj.sizes = [];
+    if (!Array.isArray(productObj.scents)) productObj.scents = [];
+
+    res.status(200).json({ success: true, product: productObj });
   } catch (err) {
     console.error('Get Product Error:', err);
     res.status(500).json({ success: false, message: 'Internal Server Error' });
@@ -225,7 +338,46 @@ export const getProductsByStoreUsername = async (req, res) => {
       .populate('storeId', 'name email image username')
       .populate('category', 'name slug');
 
-    res.status(200).json({ success: true, products });
+    // Ensure colors, sizes, and scents are proper arrays in the response
+    const formattedProducts = products.map(product => {
+      const productObj = product.toObject();
+      
+      // Process colors
+      if (productObj.colors && typeof productObj.colors === 'string') {
+        try {
+          productObj.colors = JSON.parse(productObj.colors);
+        } catch (e) {
+          productObj.colors = productObj.colors.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Process sizes
+      if (productObj.sizes && typeof productObj.sizes === 'string') {
+        try {
+          productObj.sizes = JSON.parse(productObj.sizes);
+        } catch (e) {
+          productObj.sizes = productObj.sizes.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Process scents
+      if (productObj.scents && typeof productObj.scents === 'string') {
+        try {
+          productObj.scents = JSON.parse(productObj.scents);
+        } catch (e) {
+          productObj.scents = productObj.scents.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Ensure they are arrays
+      if (!Array.isArray(productObj.colors)) productObj.colors = [];
+      if (!Array.isArray(productObj.sizes)) productObj.sizes = [];
+      if (!Array.isArray(productObj.scents)) productObj.scents = [];
+      
+      return productObj;
+    });
+
+    res.status(200).json({ success: true, products: formattedProducts });
   } catch (err) {
     console.error('Get Store Products Error:', err);
     res.status(500).json({ success: false, message: 'Internal Server Error' });
@@ -275,11 +427,48 @@ export const getMyStoreProducts = async (req, res) => {
       productsModel.countDocuments(query)
     ]);
 
+    // Ensure colors, sizes, and scents are proper arrays in the response
+    const formattedProducts = products.map(product => {
+      // Process colors
+      if (product.colors && typeof product.colors === 'string') {
+        try {
+          product.colors = JSON.parse(product.colors);
+        } catch (e) {
+          product.colors = product.colors.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Process sizes
+      if (product.sizes && typeof product.sizes === 'string') {
+        try {
+          product.sizes = JSON.parse(product.sizes);
+        } catch (e) {
+          product.sizes = product.sizes.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Process scents
+      if (product.scents && typeof product.scents === 'string') {
+        try {
+          product.scents = JSON.parse(product.scents);
+        } catch (e) {
+          product.scents = product.scents.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+        }
+      }
+      
+      // Ensure they are arrays
+      if (!Array.isArray(product.colors)) product.colors = [];
+      if (!Array.isArray(product.sizes)) product.sizes = [];
+      if (!Array.isArray(product.scents)) product.scents = [];
+      
+      return product;
+    });
+
     res.status(200).json({
       success: true,
       message: 'Products for your store fetched successfully',
-      count: products.length,
-      products,
+      count: formattedProducts.length,
+      products: formattedProducts,
       pagination: {
         page: parseInt(page, 10),
         limit: parseInt(limit, 10),

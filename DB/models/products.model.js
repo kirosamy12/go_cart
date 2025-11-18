@@ -74,4 +74,53 @@ const productSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Custom toJSON method to ensure arrays are properly serialized
+productSchema.methods.toJSON = function() {
+  const product = this.toObject();
+  
+  // Ensure colors, sizes, and scents are proper arrays
+  // If they are strings that look like arrays, parse them
+  if (product.colors && typeof product.colors === 'string') {
+    try {
+      product.colors = JSON.parse(product.colors);
+    } catch (e) {
+      // If JSON.parse fails, split by comma and clean up
+      product.colors = product.colors.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+    }
+  }
+  
+  if (product.sizes && typeof product.sizes === 'string') {
+    try {
+      product.sizes = JSON.parse(product.sizes);
+    } catch (e) {
+      // If JSON.parse fails, split by comma and clean up
+      product.sizes = product.sizes.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+    }
+  }
+  
+  if (product.scents && typeof product.scents === 'string') {
+    try {
+      product.scents = JSON.parse(product.scents);
+    } catch (e) {
+      // If JSON.parse fails, split by comma and clean up
+      product.scents = product.scents.replace(/\[|\]/g, '').split(',').map(item => item.trim().replace(/"/g, ''));
+    }
+  }
+  
+  // Ensure they are arrays, if not already
+  if (!Array.isArray(product.colors)) {
+    product.colors = [];
+  }
+  
+  if (!Array.isArray(product.sizes)) {
+    product.sizes = [];
+  }
+  
+  if (!Array.isArray(product.scents)) {
+    product.scents = [];
+  }
+  
+  return product;
+};
+
 export default mongoose.model('Product', productSchema);
