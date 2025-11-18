@@ -101,39 +101,10 @@ export const createProduct = async (req, res) => {
 
     await product.save();
 
-    // Ensure sizes and scents are properly formatted as arrays
-    const productObj = product.toObject ? product.toObject() : product;
-    
-    // Ensure sizes and scents are arrays
-    if (productObj.sizes && typeof productObj.sizes === 'string') {
-      try {
-        productObj.sizes = JSON.parse(productObj.sizes);
-      } catch (e) {
-        productObj.sizes = productObj.sizes.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    }
-    
-    if (productObj.scents && typeof productObj.scents === 'string') {
-      try {
-        productObj.scents = JSON.parse(productObj.scents);
-      } catch (e) {
-        productObj.scents = productObj.scents.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    }
-    
-    // Ensure colors is also properly handled
-    if (productObj.colors && typeof productObj.colors === 'string') {
-      try {
-        productObj.colors = JSON.parse(productObj.colors);
-      } catch (e) {
-        productObj.colors = productObj.colors.split(',').map(c => c.trim()).filter(Boolean);
-      }
-    }
-    
     res.status(201).json({
       success: true,
       message: 'Product created successfully',
-      product: productObj
+      product
     });
   } catch (err) {
     console.error('Create Product Error:', err);
@@ -156,44 +127,11 @@ export const getAllProducts = async (req, res) => {
       })
       .sort({ createdAt: -1 });
 
-    // Ensure sizes and scents are properly formatted as arrays
-    const formattedProducts = products.map(product => {
-      const productObj = product.toObject ? product.toObject() : product;
-      
-      // Ensure sizes and scents are arrays
-      if (productObj.sizes && typeof productObj.sizes === 'string') {
-        try {
-          productObj.sizes = JSON.parse(productObj.sizes);
-        } catch (e) {
-          productObj.sizes = productObj.sizes.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      if (productObj.scents && typeof productObj.scents === 'string') {
-        try {
-          productObj.scents = JSON.parse(productObj.scents);
-        } catch (e) {
-          productObj.scents = productObj.scents.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      // Ensure colors is also properly handled
-      if (productObj.colors && typeof productObj.colors === 'string') {
-        try {
-          productObj.colors = JSON.parse(productObj.colors);
-        } catch (e) {
-          productObj.colors = productObj.colors.split(',').map(c => c.trim()).filter(Boolean);
-        }
-      }
-      
-      return productObj;
-    });
-    
     res.status(200).json({
       success: true,
       message: 'Products fetched successfully',
-      count: formattedProducts.length,
-      products: formattedProducts
+      count: products.length,
+      products: products || []
     });
   } catch (err) {
     console.error('Get Products Error:', err.message);
@@ -231,44 +169,11 @@ export const getProductsByCategory = async (req, res) => {
       })
       .sort({ createdAt: -1 });
 
-    // Ensure sizes and scents are properly formatted as arrays
-    const formattedProducts = products.map(product => {
-      const productObj = product.toObject ? product.toObject() : product;
-      
-      // Ensure sizes and scents are arrays
-      if (productObj.sizes && typeof productObj.sizes === 'string') {
-        try {
-          productObj.sizes = JSON.parse(productObj.sizes);
-        } catch (e) {
-          productObj.sizes = productObj.sizes.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      if (productObj.scents && typeof productObj.scents === 'string') {
-        try {
-          productObj.scents = JSON.parse(productObj.scents);
-        } catch (e) {
-          productObj.scents = productObj.scents.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      // Ensure colors is also properly handled
-      if (productObj.colors && typeof productObj.colors === 'string') {
-        try {
-          productObj.colors = JSON.parse(productObj.colors);
-        } catch (e) {
-          productObj.colors = productObj.colors.split(',').map(c => c.trim()).filter(Boolean);
-        }
-      }
-      
-      return productObj;
-    });
-    
     res.status(200).json({
       success: true,
       message: 'Products in the same category fetched successfully',
-      count: formattedProducts.length,
-      products: formattedProducts,
+      count: products.length,
+      products: products || [],
     });
   } catch (err) {
     console.error('Get Products by Category Error:', err.message);
@@ -294,36 +199,7 @@ export const getProductById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    // Ensure sizes and scents are properly formatted as arrays
-    const productObj = product.toObject ? product.toObject() : product;
-    
-    // Ensure sizes and scents are arrays
-    if (productObj.sizes && typeof productObj.sizes === 'string') {
-      try {
-        productObj.sizes = JSON.parse(productObj.sizes);
-      } catch (e) {
-        productObj.sizes = productObj.sizes.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    }
-    
-    if (productObj.scents && typeof productObj.scents === 'string') {
-      try {
-        productObj.scents = JSON.parse(productObj.scents);
-      } catch (e) {
-        productObj.scents = productObj.scents.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    }
-    
-    // Ensure colors is also properly handled
-    if (productObj.colors && typeof productObj.colors === 'string') {
-      try {
-        productObj.colors = JSON.parse(productObj.colors);
-      } catch (e) {
-        productObj.colors = productObj.colors.split(',').map(c => c.trim()).filter(Boolean);
-      }
-    }
-    
-    res.status(200).json({ success: true, product: productObj });
+    res.status(200).json({ success: true, product });
   } catch (err) {
     console.error('Get Product Error:', err);
     res.status(500).json({ success: false, message: 'Internal Server Error' });
@@ -349,40 +225,7 @@ export const getProductsByStoreUsername = async (req, res) => {
       .populate('storeId', 'name email image username')
       .populate('category', 'name slug');
 
-    // Ensure sizes and scents are properly formatted as arrays
-    const formattedProducts = products.map(product => {
-      const productObj = product.toObject ? product.toObject() : product;
-      
-      // Ensure sizes and scents are arrays
-      if (productObj.sizes && typeof productObj.sizes === 'string') {
-        try {
-          productObj.sizes = JSON.parse(productObj.sizes);
-        } catch (e) {
-          productObj.sizes = productObj.sizes.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      if (productObj.scents && typeof productObj.scents === 'string') {
-        try {
-          productObj.scents = JSON.parse(productObj.scents);
-        } catch (e) {
-          productObj.scents = productObj.scents.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      // Ensure colors is also properly handled
-      if (productObj.colors && typeof productObj.colors === 'string') {
-        try {
-          productObj.colors = JSON.parse(productObj.colors);
-        } catch (e) {
-          productObj.colors = productObj.colors.split(',').map(c => c.trim()).filter(Boolean);
-        }
-      }
-      
-      return productObj;
-    });
-    
-    res.status(200).json({ success: true, products: formattedProducts });
+    res.status(200).json({ success: true, products });
   } catch (err) {
     console.error('Get Store Products Error:', err);
     res.status(500).json({ success: false, message: 'Internal Server Error' });
@@ -432,44 +275,11 @@ export const getMyStoreProducts = async (req, res) => {
       productsModel.countDocuments(query)
     ]);
 
-    // Ensure sizes and scents are properly formatted as arrays
-    const formattedProducts = products.map(product => {
-      const productObj = product.toObject ? product.toObject() : product;
-      
-      // Ensure sizes and scents are arrays
-      if (productObj.sizes && typeof productObj.sizes === 'string') {
-        try {
-          productObj.sizes = JSON.parse(productObj.sizes);
-        } catch (e) {
-          productObj.sizes = productObj.sizes.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      if (productObj.scents && typeof productObj.scents === 'string') {
-        try {
-          productObj.scents = JSON.parse(productObj.scents);
-        } catch (e) {
-          productObj.scents = productObj.scents.split(',').map(s => s.trim()).filter(Boolean);
-        }
-      }
-      
-      // Ensure colors is also properly handled
-      if (productObj.colors && typeof productObj.colors === 'string') {
-        try {
-          productObj.colors = JSON.parse(productObj.colors);
-        } catch (e) {
-          productObj.colors = productObj.colors.split(',').map(c => c.trim()).filter(Boolean);
-        }
-      }
-      
-      return productObj;
-    });
-    
     res.status(200).json({
       success: true,
       message: 'Products for your store fetched successfully',
-      count: formattedProducts.length,
-      products: formattedProducts,
+      count: products.length,
+      products,
       pagination: {
         page: parseInt(page, 10),
         limit: parseInt(limit, 10),
@@ -649,39 +459,10 @@ export const updateProduct = async (req, res) => {
       });
     }
 
-    // Ensure sizes and scents are properly formatted as arrays
-    const productObj = product.toObject ? product.toObject() : product;
-    
-    // Ensure sizes and scents are arrays
-    if (productObj.sizes && typeof productObj.sizes === 'string') {
-      try {
-        productObj.sizes = JSON.parse(productObj.sizes);
-      } catch (e) {
-        productObj.sizes = productObj.sizes.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    }
-    
-    if (productObj.scents && typeof productObj.scents === 'string') {
-      try {
-        productObj.scents = JSON.parse(productObj.scents);
-      } catch (e) {
-        productObj.scents = productObj.scents.split(',').map(s => s.trim()).filter(Boolean);
-      }
-    }
-    
-    // Ensure colors is also properly handled
-    if (productObj.colors && typeof productObj.colors === 'string') {
-      try {
-        productObj.colors = JSON.parse(productObj.colors);
-      } catch (e) {
-        productObj.colors = productObj.colors.split(',').map(c => c.trim()).filter(Boolean);
-      }
-    }
-    
     res.status(200).json({
       success: true,
       message: 'Product updated successfully',
-      product: productObj
+      product
     });
 
   } catch (err) {
