@@ -2,10 +2,11 @@ import express ,{json} from 'express'
 import connection from './DB/connection.js'
 import { allRoutes } from './src/index.routes.js'
 import session from "express-session"  // ✅ تأكد من هذا السطر
-
 import passport from "./src/modules/Auth/googleAuth.js" // أنشئ هذا الملف
+import dotenv from 'dotenv'
 
-
+// Load environment variables
+dotenv.config()
 
 import cors from "cors"
 
@@ -41,5 +42,3 @@ app.get('/', (req, res) => {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
-  
- 

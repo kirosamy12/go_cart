@@ -89,6 +89,8 @@ export const createStore = async (req, res) => {
       // Send email to all admins
       if (adminUsers && adminUsers.length > 0) {
         let emailsSent = 0;
+        let emailErrors = [];
+        
         for (const admin of adminUsers) {
           if (admin.email) {
             try {
@@ -116,13 +118,24 @@ export const createStore = async (req, res) => {
               emailsSent++;
             } catch (adminEmailError) {
               console.error(`❌ Error sending email to admin ${admin.email}:`, adminEmailError);
+              emailErrors.push({
+                email: admin.email,
+                error: adminEmailError.message
+              });
             }
           }
         }
         console.log(`📧 Admin notification emails sent successfully to ${emailsSent} admin(s) for new store request`);
+        
+        // Log email errors if any occurred
+        if (emailErrors.length > 0) {
+          console.error("❌ Some admin notification emails failed to send:", emailErrors);
+        }
+      } else {
+        console.log("📧 No admin users found to send notification to");
       }
       
-      console.log("📧 Admin notification email sent successfully for new store request");
+      console.log("📧 Admin notification email process completed for new store request");
     } catch (emailError) {
       console.error("❌ Error sending admin notification email:", emailError);
       console.error("❌ Email error details:", {
