@@ -159,7 +159,7 @@ export const createStore = async (req, res) => {
         status: store.status,
         isActive: store.isActive,
         createdAt: store.createdAt,
-      },
+      }, 
     });
   } catch (error) {
     console.error("Create store error:", error);
