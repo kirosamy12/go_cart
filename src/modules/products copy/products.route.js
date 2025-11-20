@@ -14,12 +14,8 @@ import {
 } from './products.controler.js';
 import { allowTo, protectRoutes } from '../Auth/auth.controler.js';
 import { uploadArray } from '../../utils/fileUploud.js';
-import { formatProductArrays } from '../../middleware/formatArrays.js';
 
 const router = express.Router();
-
-// Apply the formatting middleware to all product routes
-router.use(formatProductArrays);
 
 // Create product
 router.post('/createProduct',protectRoutes,allowTo('store'),uploadArray('images'), createProduct);
