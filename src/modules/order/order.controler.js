@@ -538,6 +538,7 @@ export const getStoreOrders = async (req, res) => {
 // (Due to space limits, the file is very long - these are the critical fixes)
 
 // ✅ UPDATE ORDER STATUS (For Store Owners - Limited Status Options)
+// ✅ UPDATE ORDER STATUS (For Store Owners) - Fixed
 export const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -569,8 +570,33 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     // Check if the store owner owns this order
-    const store = await storeModel.findOne({ userId: req.user._id });
-    if (!store || order.storeId.toString() !== store._id.toString()) {
+    const store = await storeModel.findOne({ userId: req.user._id || req.user.id });
+    if (!store) {
+      return res.status(403).json({
+        success: false,
+        message: "You don't have a store"
+      });
+    }
+
+    // ✅ Check if store owns this order (both old and new format)
+    let hasPermission = false;
+    
+    // Check old format (single storeId)
+    if (order.storeId && order.storeId.toString() === store._id.toString()) {
+      hasPermission = true;
+    }
+    
+    // Check new format (stores array)
+    if (order.stores && order.stores.length > 0) {
+      const storeExists = order.stores.some(s => 
+        s.storeId.toString() === store._id.toString()
+      );
+      if (storeExists) {
+        hasPermission = true;
+      }
+    }
+
+    if (!hasPermission) {
       return res.status(403).json({
         success: false,
         message: "You don't have permission to update this order"
@@ -586,28 +612,41 @@ export const updateOrderStatus = async (req, res) => {
 
     // Get customer and store details for email
     const customer = await userModel.findById(order.userId);
-    const storeDetails = await storeModel.findById(order.storeId);
+    const storeDetails = await storeModel.findById(store._id);
 
     // Send professional status update email to customer
     try {
       if (customer && customer.email) {
-        const emailHtml = emailTemplates.orderStatusUpdate({
-          customerName: customer.name,
-          orderId: order.id,
-          oldStatus: oldStatus,
-          newStatus: order.status,
-          totalAmount: order.total,
-          orderItems: order.orderItems.map(item => ({
-            name: item.productId?.name || 'Unknown Product',
-            quantity: item.quantity,
-            images: item.productId?.images || []
-          }))
-        });
+        // Get store-specific items for email
+        let storeItems = [];
+        if (order.stores && order.stores.length > 0) {
+          const storeData = order.stores.find(s => 
+            s.storeId.toString() === store._id.toString()
+          );
+          if (storeData) {
+            storeItems = storeData.items;
+          }
+        } else {
+          storeItems = order.orderItems;
+        }
 
         await sendEmail({
           to: customer.email,
           subject: `Order Status Updated - ${order.id}`,
-          html: emailHtml
+          html: `
+            <h2>Order Status Update</h2>
+            <p>Dear ${customer.name},</p>
+            <p>The status of your order #${order.id} has been updated by ${storeDetails.name}.</p>
+            <p><strong>Order Details:</strong></p>
+            <ul>
+              <li>Order ID: ${order.id}</li>
+              <li>Store: ${storeDetails.name}</li>
+              <li>Old Status: ${oldStatus}</li>
+              <li>New Status: ${status}</li>
+              <li>Items from this store: ${storeItems.length}</li>
+            </ul>
+            <p>Thank you for shopping with us!</p>
+          `
         });
       }
 
@@ -634,9 +673,8 @@ export const updateOrderStatus = async (req, res) => {
                     <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
                   </ul>
                   <p>Please review this update in the admin panel.</p>
-                `,
+                `
               });
-              console.log(`📧 Order status update email sent to admin: ${admin.email}`);
             } catch (adminEmailError) {
               console.error(`❌ Error sending status update email to admin ${admin.email}:`, adminEmailError);
             }
