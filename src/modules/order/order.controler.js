@@ -44,14 +44,11 @@ const findProduct = async (productId) => {
 };
 
 // ✅ CREATE ORDER
+// ✅ CREATE ORDER - Multi-Store Support
 export const createOrder = async (req, res) => {
   try {
     const { addressId, paymentMethod, couponCode } = req.body;
     const userId = req.user._id;
-
-    console.log("🧩 Debug Info:");
-    console.log("addressId:", addressId);
-    console.log("userId from token:", userId);
 
     if (!paymentMethod || !["CASH", "VISA"].includes(paymentMethod)) {
       return res.status(400).json({
@@ -60,7 +57,7 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Get user cart with storeId populated
+    // Get cart
     const cart = await cartModel.findOne({ userId }).populate({
       path: 'items.productId',
       select: 'id name price images inStock storeId'
@@ -82,28 +79,9 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // Validate cart items and check stock
-    for (const item of cart.items) {
-      const product = await findProduct(item.productId);
-      if (!product) {
-        return res.status(400).json({
-          success: false,
-          message: `Product not found: ${item.productId?.name || 'Unknown'}`,
-        });
-      }
-
-      // Check if product has enough stock
-      if (!product.inStock) {
-        return res.status(400).json({
-          success: false,
-          message: `Product out of stock: ${product.name}`,
-        });
-      }
-    }
-
-    // Process coupon if provided
+    // Process coupon
     let coupon = null;
-    let discount = 0;
+    let discountPercentage = 0;
     if (couponCode) {
       coupon = await couponModel.findOne({ code: couponCode, isActive: true });
       if (!coupon) {
@@ -112,82 +90,108 @@ export const createOrder = async (req, res) => {
           message: "Invalid or inactive coupon code",
         });
       }
-
-      // Check if coupon is expired
+      
       if (coupon.expiryDate && coupon.expiryDate < new Date()) {
         return res.status(400).json({
           success: false,
           message: "Coupon has expired",
         });
       }
-
-      // Check if coupon usage limit is reached
+      
       if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
         return res.status(400).json({
           success: false,
           message: "Coupon usage limit reached",
         });
       }
+      
+      discountPercentage = coupon.discountPercentage;
     }
 
-    // Calculate order total
-    let subtotal = 0;
-    const orderItems = [];
+    // ✅ تجميع المنتجات حسب الـ store
+    const itemsByStore = {};
+    let orderSubtotal = 0;
+    const allOrderItems = [];
 
     for (const item of cart.items) {
       const product = await findProduct(item.productId);
-      const itemTotal = item.quantity * product.price;
-      subtotal += itemTotal;
+      
+      if (!product) {
+        return res.status(400).json({
+          success: false,
+          message: `Product not found: ${item.productId?.name || 'Unknown'}`,
+        });
+      }
 
-      orderItems.push({
-        productId: product._id, // ✅ استخدم _id للـ schema
+      if (!product.inStock) {
+        return res.status(400).json({
+          success: false,
+          message: `Product out of stock: ${product.name}`,
+        });
+      }
+
+      const storeId = product.storeId.toString();
+      
+      if (!itemsByStore[storeId]) {
+        itemsByStore[storeId] = {
+          storeId: product.storeId,
+          items: [],
+          subtotal: 0
+        };
+      }
+
+      const itemTotal = item.quantity * product.price;
+      orderSubtotal += itemTotal;
+
+      const orderItem = {
+        productId: product._id,
         quantity: item.quantity,
         price: product.price,
         selectedColor: item.selectedColor || null,
         selectedSize: item.selectedSize || null,
         selectedScent: item.selectedScent || null
+      };
+
+      itemsByStore[storeId].items.push(orderItem);
+      itemsByStore[storeId].subtotal += itemTotal;
+      allOrderItems.push(orderItem);
+    }
+
+    // ✅ حساب الخصم والـ total لكل store
+    const storesArray = [];
+    let totalDiscount = 0;
+
+    for (const [storeId, storeData] of Object.entries(itemsByStore)) {
+      const storeDiscount = (storeData.subtotal * discountPercentage) / 100;
+      totalDiscount += storeDiscount;
+      
+      storesArray.push({
+        storeId: storeData.storeId,
+        items: storeData.items,
+        subtotal: storeData.subtotal,
+        discount: storeDiscount,
+        total: storeData.subtotal - storeDiscount
       });
     }
 
-    // Apply coupon discount if valid
-    if (coupon) {
-      discount = (subtotal * coupon.discountPercentage) / 100;
-    }
+    const orderTotal = orderSubtotal - totalDiscount;
 
-    const total = subtotal - discount;
-
-    // ✅ Get storeId from first product
-    let storeId;
-    if (cart.items[0].productId?.storeId) {
-      storeId = cart.items[0].productId.storeId;
-    } else {
-      // Fallback: fetch product to get storeId
-      const firstProduct = await findProduct(cart.items[0].productId);
-      if (!firstProduct) {
-        return res.status(400).json({
-          success: false,
-          message: "Could not find product store"
-        });
-      }
-      storeId = firstProduct.storeId;
-    }
-
-    // Create order
+    // ✅ إنشاء الـ order
     const newOrder = new orderModel({
       id: generateId(),
       userId,
-      storeId: storeId, // ✅ استخدم storeId اللي جبناه
       addressId,
-      orderItems,
-      total,
-      subtotal,
+      orderItems: allOrderItems, // كل المنتجات
+      stores: storesArray, // ✅ تفاصيل كل store
+      total: orderTotal,
+      subtotal: orderSubtotal,
       paymentMethod,
       isPaid: paymentMethod === "CASH" ? false : true,
       isCouponUsed: !!coupon,
       coupon: coupon ? {
         code: coupon.code,
         discountPercentage: coupon.discountPercentage,
-        discountAmount: discount
+        discountAmount: totalDiscount
       } : null
     });
 
@@ -196,99 +200,59 @@ export const createOrder = async (req, res) => {
     // Clear cart
     await cartModel.findOneAndDelete({ userId });
 
-    // Update coupon usage if used
+    // Update coupon usage
     if (coupon) {
       coupon.usedCount += 1;
       await coupon.save();
     }
 
-    // Send email notifications
+    // ✅ إرسال emails لكل store
     try {
       const customer = await userModel.findById(userId);
-      const store = await storeModel.findById(newOrder.storeId);
 
-      console.log("📧 Preparing to send order confirmation emails...");
-      console.log("Customer email:", customer?.email);
-      console.log("Store email:", store?.email);
-
-      // Professional Order Confirmation Email to Customer
+      // Email للعميل
       if (customer && customer.email) {
-        const emailHtml = emailTemplates.orderConfirmation({
-          customerName: customer.name,
-          orderId: newOrder.id,
-          totalAmount: newOrder.total,
-          paymentMethod: newOrder.paymentMethod,
-          orderItems: newOrder.orderItems.map(item => ({
-            name: item.productId?.name || 'Unknown Product',
-            quantity: item.quantity,
-            unitPrice: item.price,
-            lineTotal: item.price * item.quantity,
-            selectedColor: item.selectedColor,
-            selectedSize: item.selectedSize,
-            selectedScent: item.selectedScent,
-            images: item.productId?.images || []
-          })),
-          orderDate: newOrder.createdAt
-        });
-
         await sendEmail({
           to: customer.email,
           subject: `Order Confirmation - ${newOrder.id}`,
-          html: emailHtml,
-        });
-      }
-
-      // Email to Store
-      if (store && store.email) {
-        await sendEmail({
-          to: store.email,
-          subject: "New Order Received",
           html: `
-            <h2>New Order Received</h2>
-            <p>Hello ${store.name},</p>
-            <p>You have received a new order #${newOrder.id}.</p>
+            <h2>Order Confirmation</h2>
+            <p>Dear ${customer.name},</p>
+            <p>Your order has been placed successfully!</p>
             <ul>
-              <li>Customer: ${customer?.name || "N/A"}</li>
+              <li>Order ID: ${newOrder.id}</li>
               <li>Total: $${newOrder.total}</li>
-              <li>Payment: ${newOrder.paymentMethod}</li>
+              <li>Stores: ${storesArray.length}</li>
             </ul>
-          `,
+          `
         });
       }
 
-      // Email to Admins
-      const adminUsers = await userModel.find({ role: 'admin' });
-      console.log("📧 Preparing to send order confirmation emails to admins...");
-      
-      if (adminUsers && adminUsers.length > 0) {
-        let emailsSent = 0;
-        for (const admin of adminUsers) {
-          if (admin.email) {
-            try {
-              await sendEmail({
-                to: admin.email,
-                subject: "New Order Placed",
-                html: `
-                  <h2>New Order Placed</h2>
-                  <p>Order #${newOrder.id} placed successfully.</p>
-                  <ul>
-                    <li>Customer: ${customer?.name || "N/A"} (${customer?.email || "N/A"})</li>
-                    <li>Store: ${store?.name || "N/A"} (${store?.email || "N/A"})</li>
-                    <li>Total: $${newOrder.total}</li>
-                    <li>Payment: ${newOrder.paymentMethod}</li>
-                  </ul>
-                `,
-              });
-              emailsSent++;
-            } catch (adminEmailError) {
-              console.error(`❌ Error sending email to admin ${admin.email}:`, adminEmailError);
-            }
-          }
+      // Email لكل store
+      for (const storeData of storesArray) {
+        const store = await storeModel.findById(storeData.storeId);
+        
+        if (store && store.email) {
+          await sendEmail({
+            to: store.email,
+            subject: `New Order - ${newOrder.id}`,
+            html: `
+              <h2>New Order Received</h2>
+              <p>Hello ${store.name},</p>
+              <p>You have received a new order #${newOrder.id}.</p>
+              <ul>
+                <li>Customer: ${customer?.name || "N/A"}</li>
+                <li>Your Items: ${storeData.items.length}</li>
+                <li>Your Total: $${storeData.total}</li>
+                <li>Payment: ${newOrder.paymentMethod}</li>
+              </ul>
+            `
+          });
         }
-        console.log(`📧 Order confirmation emails sent to ${emailsSent} admin(s)`);
       }
+
     } catch (emailError) {
-      console.error("❌ Error sending email notifications:", emailError);
+      console.error("❌ Error sending emails:", emailError);
     }
 
     return res.status(201).json({
@@ -297,11 +261,10 @@ export const createOrder = async (req, res) => {
       order: {
         id: newOrder.id,
         total: newOrder.total,
+        stores: storesArray.length,
         status: newOrder.status,
         paymentMethod: newOrder.paymentMethod,
         isPaid: newOrder.isPaid,
-        isCouponUsed: newOrder.isCouponUsed,
-        coupon: newOrder.coupon,
         createdAt: newOrder.createdAt,
       },
     });
@@ -314,7 +277,6 @@ export const createOrder = async (req, res) => {
     });
   }
 };
-
 // ✅ GET USER ORDERS
 export const getUserOrders = async (req, res) => {
   try {
@@ -501,14 +463,17 @@ export const getStoreOrders = async (req, res) => {
     const storeId = store._id;
     const skip = (page - 1) * limit;
 
-    const query = { storeId };
+    // ✅ البحث في الـ stores array
+    const query = { 
+      'stores.storeId': storeId 
+    };
     if (status) query.status = status;
 
     const [orders, total] = await Promise.all([
       orderModel.find(query)
         .populate('userId', 'id name email phone')
         .populate('addressId', 'street city state country phone')
-        .populate('orderItems.productId', 'id name images price colors sizes scents')
+        .populate('stores.items.productId', 'id name images price colors sizes scents')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit, 10)),
@@ -516,20 +481,21 @@ export const getStoreOrders = async (req, res) => {
       orderModel.countDocuments(query)
     ]);
 
-    res.json({
-      success: true,
-      orders: orders.map(order => ({
+    // ✅ فلترة المنتجات الخاصة بالـ store فقط
+    const filteredOrders = orders.map(order => {
+      const storeData = order.stores.find(s => s.storeId.toString() === storeId.toString());
+      
+      return {
         id: order.id,
-        total: order.total,
+        total: storeData?.total || 0, // ✅ total الخاص بالـ store
+        subtotal: storeData?.subtotal || 0,
         status: order.status,
         paymentMethod: order.paymentMethod,
         isPaid: order.isPaid,
-        isCouponUsed: order.isCouponUsed,
-        coupon: order.coupon,
         createdAt: order.createdAt,
         customer: order.userId,
         address: order.addressId,
-        orderItems: order.orderItems.map(item => ({
+        orderItems: storeData?.items.map(item => ({
           product: {
             id: item.productId?.id,
             name: item.productId?.name,
@@ -544,20 +510,18 @@ export const getStoreOrders = async (req, res) => {
           selectedColor: item.selectedColor,
           selectedSize: item.selectedSize,
           selectedScent: item.selectedScent
-        }))
-      })),
+        })) || []
+      };
+    });
+
+    res.json({
+      success: true,
+      orders: filteredOrders,
       pagination: {
         page: parseInt(page, 10),
         limit: parseInt(limit, 10),
         total,
         pages: Math.ceil(total / limit)
-      },
-      stats: {
-        totalOrders: total,
-        pendingOrders: orders.filter(o => o.status === 'PENDING').length,
-        processingOrders: orders.filter(o => o.status === 'PROCESSING').length,
-        deliveredOrders: orders.filter(o => o.status === 'DELIVERED').length,
-        cancelledOrders: orders.filter(o => o.status === 'CANCELLED').length
       }
     });
 
@@ -565,7 +529,7 @@ export const getStoreOrders = async (req, res) => {
     console.error('❌ Get store orders error:', error);
     res.status(500).json({
       success: false,
-      message: 'Something went wrong while fetching store orders'
+      message: 'Something went wrong'
     });
   }
 };

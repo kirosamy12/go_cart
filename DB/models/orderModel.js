@@ -1,5 +1,62 @@
 import mongoose from 'mongoose';
 
+// ✅ Schema للـ items داخل كل store
+const storeItemSchema = new mongoose.Schema({
+  productId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product',
+    required: true
+  },
+  quantity: {
+    type: Number,
+    required: true,
+    min: 1
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  selectedColor: {
+    type: String,
+    default: null
+  },
+  selectedSize: {
+    type: String,
+    default: null
+  },
+  selectedScent: {
+    type: String,
+    default: null
+  }
+}, { _id: false });
+
+// ✅ Schema لبيانات كل store في الـ order
+const orderStoreSchema = new mongoose.Schema({
+  storeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Store',
+    required: true
+  },
+  items: [storeItemSchema],
+  subtotal: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  discount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  total: {
+    type: Number,
+    required: true,
+    min: 0
+  }
+}, { _id: false });
+
+// ✅ Schema للـ order items (للتوافق مع الكود القديم)
 const embeddedOrderItemSchema = new mongoose.Schema({
   productId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -18,18 +75,19 @@ const embeddedOrderItemSchema = new mongoose.Schema({
   },
   selectedColor: {
     type: String,
-    default: null  // ← إضافة هذا الحقل
+    default: null
   },
   selectedSize: {
     type: String,
-    default: null  // ← إضافة هذا الحقل للحجم
+    default: null
   },
   selectedScent: {
     type: String,
-    default: null  // ← إضافة هذا الحقل للروائح
+    default: null
   }
 }, { _id: false });
 
+// ✅ Order Schema الرئيسي
 const orderSchema = new mongoose.Schema({
   id: {
     type: String,
@@ -37,6 +95,11 @@ const orderSchema = new mongoose.Schema({
     sparse: true
   },
   total: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  subtotal: {
     type: Number,
     required: true,
     min: 0
@@ -51,10 +114,11 @@ const orderSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  // ✅ storeId القديم (optional للتوافق)
   storeId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Store',
-    required: true
+    required: false
   },
   addressId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -75,12 +139,26 @@ const orderSchema = new mongoose.Schema({
     default: false
   },
   coupon: {
-    type: Object,
-    default: {}
+    code: String,
+    discountPercentage: Number,
+    discountAmount: Number
   },
-  orderItems: [embeddedOrderItemSchema]
+  // ✅ orderItems القديم (للتوافق)
+  orderItems: [embeddedOrderItemSchema],
+  
+  // ✅ الحقل الجديد - تفاصيل كل store
+  stores: {
+    type: [orderStoreSchema],
+    default: []
+  }
 }, {
   timestamps: true
 });
+
+// ✅ Index للبحث السريع
+orderSchema.index({ userId: 1, createdAt: -1 });
+orderSchema.index({ 'stores.storeId': 1 });
+orderSchema.index({ status: 1 });
+orderSchema.index({ id: 1 });
 
 export default mongoose.model('Order', orderSchema);
