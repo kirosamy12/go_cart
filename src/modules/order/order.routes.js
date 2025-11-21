@@ -62,7 +62,7 @@ router.get('/orders/getUserOrders',protectRoutes, getUserOrders);
  // Store Invoices
  router.get("/store/invoices", protectRoutes, allowTo("store"), getStoreInvoices);
  router.get("/store/invoice/:orderId", protectRoutes, allowTo("store"), getStoreInvoiceById);
-
+ 
  // Successful delivered orders for user
  router.get("/orders/successful", protectRoutes, getSuccessfulOrders);
 
