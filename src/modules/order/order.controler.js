@@ -1195,6 +1195,7 @@ export const getAllStoresWithOrders = async (req, res) => {
 
 
 // ✅ GET ORDER BY ID FOR STORE OWNER
+// ✅ GET STORE ORDER BY ID - Fixed
 export const getStoreOrderById = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -1217,14 +1218,18 @@ export const getStoreOrderById = async (req, res) => {
       });
     }
 
-    // Find the order by ID and ensure it belongs to the store
+    // ✅ Find the order - check both old storeId and new stores array
     const order = await orderModel.findOne({ 
       id: orderId,
-      storeId: store._id
+      $or: [
+        { storeId: store._id }, // ✅ للأوردرات القديمة
+        { 'stores.storeId': store._id } // ✅ للأوردرات الجديدة Multi-Store
+      ]
     })
       .populate('userId', 'id name email phone')
       .populate('addressId', 'name email street city state zip country phone')
-      .populate('orderItems.productId', 'id name images price colors sizes description category');
+      .populate('orderItems.productId', 'id name images price colors sizes description category scents')
+      .populate('stores.items.productId', 'id name images price colors sizes description category scents');
 
     if (!order) {
       return res.status(404).json({
@@ -1233,12 +1238,72 @@ export const getStoreOrderById = async (req, res) => {
       });
     }
 
-    // Format the response with detailed information
+    // ✅ Get store-specific data
+    let storeOrderItems = [];
+    let storeTotal = 0;
+    let storeSubtotal = 0;
+
+    // Check if this is a new multi-store order
+    if (order.stores && order.stores.length > 0) {
+      const storeData = order.stores.find(s => s.storeId.toString() === store._id.toString());
+      
+      if (storeData) {
+        storeOrderItems = storeData.items.map(item => ({
+          product: {
+            id: item.productId?.id,
+            name: item.productId?.name,
+            images: item.productId?.images,
+            price: item.productId?.price,
+            colors: item.productId?.colors,
+            sizes: item.productId?.sizes,
+            scents: item.productId?.scents,
+            description: item.productId?.description,
+            category: item.productId?.category
+          },
+          quantity: item.quantity,
+          unitPrice: item.price,
+          selectedColor: item.selectedColor,
+          selectedSize: item.selectedSize,
+          selectedScent: item.selectedScent,
+          lineTotal: item.price * item.quantity
+        }));
+        
+        storeTotal = storeData.total;
+        storeSubtotal = storeData.subtotal;
+      }
+    } else {
+      // Old order format - use orderItems
+      storeOrderItems = order.orderItems.map(item => ({
+        product: {
+          id: item.productId?.id,
+          name: item.productId?.name,
+          images: item.productId?.images,
+          price: item.productId?.price,
+          colors: item.productId?.colors,
+          sizes: item.productId?.sizes,
+          scents: item.productId?.scents,
+          description: item.productId?.description,
+          category: item.productId?.category
+        },
+        quantity: item.quantity,
+        unitPrice: item.price,
+        selectedColor: item.selectedColor,
+        selectedSize: item.selectedSize,
+        selectedScent: item.selectedScent,
+        lineTotal: item.price * item.quantity
+      }));
+      
+      storeTotal = order.total;
+      storeSubtotal = order.subtotal;
+    }
+
+    // Format the response
     res.json({
       success: true,
       order: {
         id: order.id,
-        total: order.total,
+        total: storeTotal, // ✅ total الخاص بالـ store
+        subtotal: storeSubtotal, // ✅ subtotal الخاص بالـ store
         status: order.status,
         paymentMethod: order.paymentMethod,
         isPaid: order.isPaid,
@@ -1267,30 +1332,14 @@ export const getStoreOrderById = async (req, res) => {
           phone: order.addressId.phone
         } : null,
         
-        // Order items with complete details
-        orderItems: order.orderItems.map(item => ({
-          product: {
-            id: item.productId.id,
-            name: item.productId.name,
-            images: item.productId.images,
-            price: item.productId.price,
-            colors: item.productId.colors,
-            sizes: item.productId.sizes,
-            description: item.productId.description,
-            category: item.productId.category
-          },
-          quantity: item.quantity,
-          unitPrice: item.price,
-          selectedColor: item.selectedColor,
-          selectedSize: item.selectedSize,
-          lineTotal: item.price * item.quantity
-        })),
+        // Order items - only this store's items
+        orderItems: storeOrderItems,
         
         // Order analytics
         analytics: {
-          itemCount: order.orderItems.reduce((total, item) => total + item.quantity, 0),
-          uniqueItems: order.orderItems.length,
-          subtotal: order.orderItems.reduce((total, item) => total + (item.price * item.quantity), 0)
+          itemCount: storeOrderItems.reduce((total, item) => total + item.quantity, 0),
+          uniqueItems: storeOrderItems.length,
+          subtotal: storeSubtotal
         }
       }
     });
