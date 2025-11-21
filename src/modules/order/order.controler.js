@@ -539,10 +539,13 @@ export const getStoreOrders = async (req, res) => {
 
 // ✅ UPDATE ORDER STATUS (For Store Owners - Limited Status Options)
 // ✅ UPDATE ORDER STATUS (For Store Owners) - Fixed
+// ✅ UPDATE ORDER STATUS (For Store Owners) - Final Fix
 export const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
+
+    console.log("🔍 Debug - req.user:", req.user); // ✅ للتشخيص
 
     if (!status) {
       return res.status(400).json({
@@ -551,7 +554,7 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // Validate status - store owners can only update to specific statuses
+    // Validate status
     const allowedStatuses = ['PENDING', 'READY', 'PICKED_UP'];
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({
@@ -569,8 +572,34 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // Check if the store owner owns this order
-    const store = await storeModel.findOne({ userId: req.user._id || req.user.id });
+    // ✅ Get userId from req.user (handle all cases)
+    let userId;
+    if (req.user._id) {
+      userId = req.user._id;
+    } else if (req.user.id) {
+      // If req.user.id is a string, find the user first
+      const user = await userModel.findOne({ id: req.user.id.toString() });
+      if (!user) {
+        return res.status(400).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      userId = user._id;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID not found in request'
+      });
+    }
+
+    console.log("🔍 Debug - userId:", userId); // ✅ للتشخيص
+
+    // Check if the user has a store
+    const store = await storeModel.findOne({ userId: userId });
+    
+    console.log("🔍 Debug - store found:", store ? store.name : 'NOT FOUND'); // ✅ للتشخيص
+    
     if (!store) {
       return res.status(403).json({
         success: false,
@@ -578,7 +607,7 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // ✅ Check if store owns this order (both old and new format)
+    // ✅ Check if store owns this order
     let hasPermission = false;
     
     // Check old format (single storeId)
@@ -596,6 +625,8 @@ export const updateOrderStatus = async (req, res) => {
       }
     }
 
+    console.log("🔍 Debug - hasPermission:", hasPermission); // ✅ للتشخيص
+
     if (!hasPermission) {
       return res.status(403).json({
         success: false,
@@ -603,21 +634,19 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // Save old status for reference
+    // Save old status
     const oldStatus = order.status;
 
     // Update order status
     order.status = status;
     await order.save();
 
-    // Get customer and store details for email
+    // Get customer details
     const customer = await userModel.findById(order.userId);
-    const storeDetails = await storeModel.findById(store._id);
 
-    // Send professional status update email to customer
+    // Send emails
     try {
       if (customer && customer.email) {
-        // Get store-specific items for email
         let storeItems = [];
         if (order.stores && order.stores.length > 0) {
           const storeData = order.stores.find(s => 
@@ -636,21 +665,20 @@ export const updateOrderStatus = async (req, res) => {
           html: `
             <h2>Order Status Update</h2>
             <p>Dear ${customer.name},</p>
-            <p>The status of your order #${order.id} has been updated by ${storeDetails.name}.</p>
+            <p>The status of your order #${order.id} has been updated by ${store.name}.</p>
             <p><strong>Order Details:</strong></p>
             <ul>
               <li>Order ID: ${order.id}</li>
-              <li>Store: ${storeDetails.name}</li>
+              <li>Store: ${store.name}</li>
               <li>Old Status: ${oldStatus}</li>
               <li>New Status: ${status}</li>
               <li>Items from this store: ${storeItems.length}</li>
             </ul>
-            <p>Thank you for shopping with us!</p>
           `
         });
       }
 
-      // Notify admins about the status update
+      // Notify admins
       const adminUsers = await userModel.find({ role: 'admin' });
       if (adminUsers && adminUsers.length > 0) {
         for (const admin of adminUsers) {
@@ -661,28 +689,24 @@ export const updateOrderStatus = async (req, res) => {
                 subject: `Order Status Updated by Store - ${order.id}`,
                 html: `
                   <h2>Order Status Update</h2>
-                  <p>Store ${storeDetails.name} has updated the status of order #${orderId}.</p>
-                  <p><strong>Order Details:</strong></p>
+                  <p>Store ${store.name} has updated the status of order #${orderId}.</p>
                   <ul>
                     <li>Order ID: ${orderId}</li>
-                    <li>Store: ${storeDetails.name} (${storeDetails.username})</li>
+                    <li>Store: ${store.name} (${store.username})</li>
                     <li>Old Status: ${oldStatus}</li>
                     <li>New Status: ${status}</li>
-                    <li>Total Amount: $${order.total}</li>
-                    <li>Payment Method: ${order.paymentMethod}</li>
-                    <li>Payment Status: ${order.isPaid ? 'Paid' : 'Not Paid'}</li>
+                    <li>Total: $${order.total}</li>
                   </ul>
-                  <p>Please review this update in the admin panel.</p>
                 `
               });
             } catch (adminEmailError) {
-              console.error(`❌ Error sending status update email to admin ${admin.email}:`, adminEmailError);
+              console.error(`❌ Error sending email to admin:`, adminEmailError);
             }
           }
         }
       }
     } catch (emailError) {
-      console.error("❌ Error sending status update email notifications:", emailError);
+      console.error("❌ Error sending emails:", emailError);
     }
 
     return res.status(200).json({
@@ -700,22 +724,22 @@ export const updateOrderStatus = async (req, res) => {
           email: customer?.email
         },
         store: {
-          id: storeDetails?.id,
-          name: storeDetails?.name,
-          username: storeDetails?.username
+          id: store.id,
+          name: store.name,
+          username: store.username
         },
         updatedAt: order.updatedAt
       },
     });
   } catch (error) {
-    console.error('❌ Update store order status error:', error);
+    console.error('❌ Update order status error:', error);
     res.status(500).json({
       success: false,
-      message: 'Something went wrong while updating order status'
+      message: 'Something went wrong while updating order status',
+      error: error.message
     });
   }
 };
-
 
 // ✅ UPDATE ORDER STATUS BY ADMIN (Full Status Control)
 export const updateOrderStatusByAdmin = async (req, res) => {
