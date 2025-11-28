@@ -27,7 +27,6 @@ authRouter.get(
       const tokenPayload = {
         userId: req.user.id,
         email: req.user.email,
-        name: req.user.name,          // important
         role: req.user.role || "user"
       };
 
