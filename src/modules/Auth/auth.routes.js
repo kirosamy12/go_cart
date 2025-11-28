@@ -43,7 +43,7 @@ authRouter.get("/google/callback",
       );
       
       // Redirect to frontend with token (you can customize this URL)
-      res.redirect(`https://frontend-go-cart.vercel.app/auth/success?token=${token}`);
+      res.redirect(`https://shopverse-cart.vercel.app/auth/success?token=${token}`);
     } catch (error) {
       console.error("Google callback error:", error);
       res.status(500).json({
