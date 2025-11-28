@@ -25,7 +25,8 @@ authRouter.get("/google/callback",
       const tokenPayload = {
         userId: req.user.id,
         email: req.user.email,
-        role: req.user.role
+          name: req.user.name,           // ✅ المهم ده!
+        role: req.user.role || 'user' 
       };
       
       // If user is a store owner, add storeId to token
