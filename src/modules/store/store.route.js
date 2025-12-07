@@ -1,5 +1,5 @@
 import express from "express";
-import { createStore, getAllStores, getStoreByUsername,updateStoreStatus,getPendingStores ,getAllUsers,getUserById,updateUserRole} from "../store/store.controler.js";
+import { createStore, getAllStores, getStoreByUsername,updateStoreStatus,getPendingStores ,getAllUsers,getUserById,updateUserRole, updateStore} from "../store/store.controler.js";
 import { allowTo, protectRoutes } from "../Auth/auth.controler.js";
 import { uploadSingle } from "../../utils/fileUploud.js";
 const authRouter= express.Router();
@@ -13,5 +13,6 @@ authRouter.get('/admin/stores/pending', protectRoutes,allowTo("admin"),getPendin
 authRouter.get("/admin/users", protectRoutes,allowTo("admin"), getAllUsers);
 authRouter.get("/admin/getUser/:id", protectRoutes,allowTo("admin"), getUserById);
 authRouter.put("/updateUserRole/:id", protectRoutes,allowTo("admin"), updateUserRole);
+authRouter.put('/stores/update', protectRoutes, uploadSingle("logo"), updateStore);
   
-export default authRouter; 
+export default authRouter;

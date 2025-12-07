@@ -80,70 +80,81 @@ export const register = handleError(async (req, res) => {
 
 // 2. USER LOGIN
 export const login = async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  // Validation
-  if (!email || !password) {
-    return res.status(400).json({
-      success: false,
-      error: "Bad Request",
-      message: "Email and password are required",
-    });
-  }
-
-  // Find user
-  const user = await userModel.findOne({ email });
-  if (!user) {
-    return res.status(401).json({
-      success: false,
-      error: "Unauthorized",
-      message: "Invalid credentials",
-    });
-  }
-
-  // Verify password
-  const isValidPassword = await bcrypt.compare(password, user.password);
-  if (!isValidPassword) {
-    return res.status(401).json({
-      success: false,
-      error: "Unauthorized",
-      message: "Invalid credentials",
-    });
-  }
-
-  // Generate JWT token
-  // For store users, include storeId in the token
-  const tokenPayload = {
-    userId: user.id,
-    email: user.email,
-    role: user.role
-  };
-  
-  // If user is a store owner, add storeId to token
-  if (user.role === 'store') {
-    const store = await storeModel.findOne({ userId: user.id });
-    if (store) {
-      tokenPayload.storeId = store.id;
+    // Validation
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: "Bad Request",
+        message: "Email and password are required",
+      });
     }
-  }
-  
-  const token = jwt.sign(
-    tokenPayload,
-    process.env.JWT_SECRET || "kiro", // من الأفضل يكون في .env
-    { expiresIn: "24h" }
-  );
 
-  res.json({
-    success: true,
-    user: {
-      id: user.id,
-      name: user.name,
+    // Find user
+    const user = await userModel.findOne({ email });
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+        message: "Invalid credentials",
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+        message: "Invalid credentials",
+      });
+    }
+
+    // For store users, find their store
+    let store = null;
+    if (user.role === 'store') {
+      store = await storeModel.findOne({ userId: user.id });
+    }
+
+    // Generate JWT token with storeId
+    const tokenPayload = {
+      userId: user.id,
       email: user.email,
-      image: user.image,
-    },
-    token,
-  });
+      role: user.role,
+      storeId: store ? store.id : null
+    };
+
+    const token = jwt.sign(
+      tokenPayload,
+      process.env.JWT_SECRET || "kiro",
+      { expiresIn: "24h" }
+    );
+
+    res.json({
+      success: true,
+      message: "Login successful",
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        image: user.image,
+        storeId: store ? store.id : null
+      },
+      token,
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+      message: "Something went wrong during login",
+    });
+  }
 };
+
 // 3. GET USER PROFILE
 export const getProfile = handleError(async (req, res) => {
   try {

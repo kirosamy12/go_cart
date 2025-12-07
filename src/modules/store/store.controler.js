@@ -2,6 +2,7 @@ import storeModel from "../../../DB/models/store.model.js";
 import userModel from "../../../DB/models/user.model.js";
 import sendEmail from "../../utils/sendEmail.js";
 import productModel from "../../../DB/models/products.model.js";
+import { uploadSingle } from "../../utils/fileUploud.js";
 
 
 
@@ -542,6 +543,110 @@ export const getPendingStores = async (req, res) => {
         error: error.message,
         timestamp: new Date().toISOString(),
       },
+    });
+  }
+};
+
+
+// UPDATE STORE INFORMATION
+export const updateStore = async (req, res) => {
+  try {
+    // Get storeId from user token instead of params
+    const storeId = req.user.storeId;
+    
+    // If no storeId in token, return error
+    if (!storeId) {
+      return res.status(400).json({
+        success: false,
+        error: "Bad Request",
+        message: "No store associated with this user",
+      });
+    }
+    
+    const { name, username, description, email, contact, address } = req.body;
+    
+    // Get logo from uploaded file if exists
+    const logo = req.body.image || undefined;
+    
+    // Check if store exists
+    const store = await storeModel.findOne({ id: storeId });
+    
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        error: "Not Found",
+        message: "Store not found",
+      });
+    }
+    
+    // Check if user is authorized to update this store (must be the owner)
+    if (req.user.id !== store.userId) {
+      return res.status(403).json({
+        success: false,
+        error: "Forbidden",
+        message: "You are not authorized to update this store",
+      });
+    }
+    
+    // Check if new username is already taken by another store
+    if (username && username !== store.username) {
+      const usernameExists = await storeModel.findOne({ username, id: { $ne: storeId } });
+      if (usernameExists) {
+        return res.status(400).json({
+          success: false,
+          error: "Bad Request",
+          message: "Username is already taken",
+        });
+      }
+    }
+    
+    // Check if new email is already taken by another store
+    if (email && email !== store.email) {
+      const emailExists = await storeModel.findOne({ email, id: { $ne: storeId } });
+      if (emailExists) {
+        return res.status(400).json({
+          success: false,
+          error: "Bad Request",
+          message: "Email is already taken by another store",
+        });
+      }
+    }
+    
+    // Update store fields
+    if (name !== undefined) store.name = name;
+    if (username !== undefined) store.username = username;
+    if (description !== undefined) store.description = description;
+    if (email !== undefined) store.email = email;
+    if (contact !== undefined) store.contact = contact;
+    if (address !== undefined) store.address = address;
+    if (logo !== undefined) store.logo = logo;
+    
+    // Save updated store
+    await store.save();
+    
+    res.json({
+      success: true,
+      message: "Store updated successfully",
+      store: {
+        id: store.id,
+        name: store.name,
+        username: store.username,
+        description: store.description,
+        email: store.email,
+        contact: store.contact,
+        address: store.address,
+        logo: store.logo,
+        status: store.status,
+        isActive: store.isActive,
+        updatedAt: store.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error("Update store error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+      message: "Something went wrong while updating store",
     });
   }
 };
